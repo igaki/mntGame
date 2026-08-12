@@ -1,0 +1,1903 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>3D Giant Battle Game</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: sans-serif;
+      user-select: none;
+      background-color: #87ceeb;
+    }
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: #fff;
+      text-shadow: 1px 1px 3px #000;
+      font-size: 18px;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #top-right-ui {
+      position: absolute;
+      top: 10px;
+      right: 15px;
+      color: #ffcc00;
+      text-shadow: 2px 2px 4px #000;
+      font-size: 24px;
+      font-weight: bold;
+      pointer-events: none;
+      font-family: 'Impact', sans-serif;
+      letter-spacing: 1px;
+      z-index: 10;
+    }
+    #kill-text {
+      position: absolute;
+      top: 35%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0);
+      color: #ff2200;
+      font-size: 72px;
+      font-weight: 900;
+      font-family: 'Impact', sans-serif;
+      text-shadow: 0 0 20px #ff0000, 3px 3px 0px #000;
+      pointer-events: none;
+      opacity: 0;
+      transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
+      letter-spacing: 4px;
+      z-index: 10;
+    }
+    #kill-text.show {
+      transform: translate(-50%, -50%) scale(1.2);
+      opacity: 1;
+    }
+    #critical-text {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      color: #ffff00;
+      font-size: 48px;
+      font-weight: 900;
+      font-family: 'Impact', sans-serif;
+      text-shadow: 0 0 15px #ffaa00, 2px 2px 0px #000;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(20px) scale(0.8);
+      transition: transform 0.15s ease-out, opacity 0.2s ease;
+      letter-spacing: 2px;
+      z-index: 10;
+    }
+    #critical-text.show {
+      transform: translateY(0) scale(1.1);
+      opacity: 1;
+    }
+    #game-over {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #ff3333;
+      font-size: 48px;
+      font-weight: bold;
+      display: none;
+      text-shadow: 2px 2px 4px #000;
+      z-index: 10;
+    }
+    #clear-screen {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      display: none;
+      pointer-events: none;
+      z-index: 100;
+      width: 100%;
+    }
+    #clear-title {
+      color: #ffd700;
+      font-size: 70px;
+      font-weight: 900;
+      font-family: 'Impact', sans-serif;
+      text-shadow: 0 0 30px #ff8800, 4px 4px 0px #000;
+      letter-spacing: 4px;
+      margin-bottom: 10px;
+      white-space: nowrap;
+    }
+    #sss-text {
+      display: none;
+      color: #00ffff;
+      font-size: 140px;
+      font-weight: 900;
+      font-family: 'Impact', sans-serif;
+      text-shadow: 0 0 40px #00ffff, 0 0 80px #0000ff, 4px 4px 0px #000;
+      letter-spacing: 8px;
+      margin-bottom: 10px;
+      animation: pulseSSS 1s infinite alternate ease-in-out;
+    }
+    @keyframes pulseSSS {
+      0% { transform: scale(1); filter: drop-shadow(0 0 20px #00ffff); }
+      100% { transform: scale(1.1); filter: drop-shadow(0 0 50px #ffffff); }
+    }
+    #clear-score {
+      color: #ffea00;
+      font-size: 44px;
+      font-weight: bold;
+      text-shadow: 0 0 15px #ffaa00, 3px 3px 0px #000;
+    }
+    #clear-rank {
+      color: #00ff88;
+      font-size: 64px;
+      font-weight: 900;
+      font-family: 'Impact', sans-serif;
+      margin-left: 15px;
+      text-shadow: 0 0 20px #00ff88, 3px 3px 0px #000;
+    }
+    #clear-rank.rank-s {
+      color: #ffcc00;
+      text-shadow: 0 0 25px #ffcc00, 0 0 50px #ffea00, 3px 3px 0px #000;
+    }
+    #god-text {
+      display: none;
+      color: #ffd700;
+      font-size: 240px;
+      font-weight: 900;
+      font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+      text-shadow: 0 0 40px #ff00ff, 0 0 80px #00ffff, 0 0 120px #ffff00, 8px 8px 0px #000;
+      animation: pulseGod 1.5s infinite alternate ease-in-out;
+    }
+    @keyframes pulseGod {
+      0% { transform: scale(1); filter: drop-shadow(0 0 30px #ff0055); }
+      100% { transform: scale(1.15); filter: drop-shadow(0 0 70px #00ffff); }
+    }
+
+    #extra-modal {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 600px;
+      height: 250px;
+      background-color: #ffffff;
+      border: 4px solid #333333;
+      border-radius: 12px;
+      box-shadow: 0 0 30px rgba(0,0,0,0.8);
+      z-index: 200;
+      box-sizing: border-box;
+      padding: 20px;
+      text-align: center;
+    }
+    #extra-msg {
+      position: absolute;
+      top: 35px;
+      left: 0;
+      width: 100%;
+      color: #ffd700;
+      font-size: 22px;
+      font-weight: bold;
+      text-shadow: 1px 1px 3px #000;
+    }
+    #extra-options {
+      position: absolute;
+      bottom: 40px;
+      left: 0;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      gap: 50px;
+    }
+    .extra-btn {
+      font-size: 24px;
+      font-weight: bold;
+      padding: 10px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      user-select: none;
+    }
+    #btn-yes {
+      color: #00aa00;
+      background-color: #e6ffe6;
+      border: 2px solid #00aa00;
+    }
+    #btn-no {
+      color: #cc0000;
+      background-color: #ffe6e6;
+      border: 2px solid #cc0000;
+    }
+
+    #boss-hp-tag {
+      position: absolute;
+      display: none;
+      transform: translate(-50%, -100%);
+      text-align: center;
+      pointer-events: none;
+      font-weight: bold;
+      text-shadow: 2px 2px 4px #000;
+      white-space: nowrap;
+      z-index: 10;
+    }
+    #boss-name {
+      color: #ff3300;
+      font-size: 28px;
+    }
+    #boss-hp-val {
+      color: #ffffff;
+      font-size: 20px;
+    }
+
+    #fujin-hp-tag {
+      position: absolute;
+      display: none;
+      transform: translate(-50%, -100%);
+      text-align: center;
+      pointer-events: none;
+      font-weight: bold;
+      text-shadow: 2px 2px 4px #000;
+      white-space: nowrap;
+      z-index: 10;
+    }
+    #fujin-name {
+      color: #00ff88;
+      font-size: 28px;
+    }
+    #fujin-hp-val {
+      color: #ffffff;
+      font-size: 20px;
+    }
+
+    #shared-hp-container {
+      display: none;
+      position: absolute;
+      top: 15px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 500px;
+      text-align: center;
+      z-index: 15;
+    }
+    #shared-hp-title {
+      color: #ff3333;
+      font-size: 22px;
+      font-weight: 900;
+      text-shadow: 2px 2px 4px #000;
+      margin-bottom: 5px;
+      letter-spacing: 2px;
+    }
+    #shared-hp-bar-bg {
+      width: 100%;
+      height: 24px;
+      background-color: rgba(0, 0, 0, 0.6);
+      border: 2px solid #ffffff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 0 10px rgba(0,0,0,0.8);
+    }
+    #shared-hp-bar-fill {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, #ff0000, #ff5500);
+      transition: width 0.1s ease-out;
+    }
+    #shared-hp-text {
+      color: #ffffff;
+      font-size: 14px;
+      font-weight: bold;
+      text-shadow: 1px 1px 2px #000;
+      margin-top: 3px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="ui">
+  <div>PLAYER HP: <span id="hp">150</span></div>
+  <div>WEAPON: <span id="weapon">銃 (20 DMG)</span></div>
+  <div>ENEMIES: <span id="enemies">0</span></div>
+  <div>TIME: <span id="timer">00:00</span></div>
+</div>
+
+<div id="top-right-ui">
+  TOTAL KILLS: <span id="kill-count">0</span>
+</div>
+
+<div id="shared-hp-container">
+  <div id="shared-hp-title">雷神 ＆ 風神 (怒り状態)</div>
+  <div id="shared-hp-bar-bg">
+    <div id="shared-hp-bar-fill"></div>
+  </div>
+  <div id="shared-hp-text">HP: 2400 / 2400</div>
+</div>
+
+<div id="boss-hp-tag">
+  <div id="boss-name">赤鬼</div>
+  <div id="boss-hp-val">HP: 1000 / 1000</div>
+</div>
+
+<div id="fujin-hp-tag">
+  <div id="fujin-name">風神</div>
+  <div id="fujin-hp-val">HP: 1200 / 1200</div>
+</div>
+
+<div id="kill-text">KILL!</div>
+<div id="critical-text">CRITICAL!</div>
+<div id="game-over">GAME OVER</div>
+
+<div id="clear-screen">
+  <div id="clear-title">パーフェクトクリア</div>
+  <div id="sss-text">SSS</div>
+  <div id="clear-score">SCORE: 0<span id="clear-rank"></span></div>
+  <div id="god-text">神</div>
+</div>
+
+<div id="extra-modal">
+  <div id="extra-msg">エキストラステージ・雷神風神の住処に移動しますか</div>
+  <div id="extra-options">
+    <div id="btn-yes" class="extra-btn">はい（Ｐ）</div>
+    <div id="btn-no" class="extra-btn">いいえ（Ｏ）</div>
+  </div>
+</div>
+
+<!-- Three.js Library -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+window.addEventListener('load', () => {
+  const killStats = {
+    mobs: 0,
+    redOni: 0,
+    nijiRyuOni: 0,
+    raijin: 0,
+    fujin: 0
+  };
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x87ceeb);
+  scene.fog = new THREE.FogExp2(0xa0e0ff, 0.012);
+
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+  scene.add(ambientLight);
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight.position.set(20, 40, 20);
+  dirLight.castShadow = true;
+  scene.add(dirLight);
+
+  const MAP_SIZE = 200;
+
+  function createCloudTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#dbe4ee';
+    ctx.fillRect(0, 0, 512, 512);
+
+    for (let i = 0; i < 800; i++) {
+      const x = Math.random() * 512;
+      const y = Math.random() * 512;
+      const r = 20 + Math.random() * 40;
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+      grad.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+      grad.addColorStop(1, 'rgba(200, 215, 230, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  const floorGeo = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE);
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0x333344 });
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  const grid = new THREE.GridHelper(MAP_SIZE, 40, 0x666688, 0x333344);
+  grid.position.y = 0.01;
+  scene.add(grid);
+
+  const playerGroup = new THREE.Group();
+  scene.add(playerGroup);
+
+  const avatarMat = new THREE.MeshStandardMaterial({ color: 0x00ff88 });
+
+  const torsoGeo = new THREE.BoxGeometry(0.6, 0.8, 0.4);
+  const torso = new THREE.Mesh(torsoGeo, avatarMat);
+  torso.position.y = 1.0;
+  playerGroup.add(torso);
+
+  const headGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+  const headMat = new THREE.MeshStandardMaterial({ color: 0xffccaa });
+  const head = new THREE.Mesh(headGeo, headMat);
+  head.position.y = 1.6;
+  playerGroup.add(head);
+
+  const limbGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.7, 6);
+  const limbMat = new THREE.MeshStandardMaterial({ color: 0x00cc66 });
+
+  const leftArm = new THREE.Mesh(limbGeo, limbMat);
+  leftArm.position.set(-0.45, 1.0, 0);
+  playerGroup.add(leftArm);
+
+  const rightArm = new THREE.Mesh(limbGeo, limbMat);
+  rightArm.position.set(0.45, 1.0, 0);
+  playerGroup.add(rightArm);
+
+  const leftLeg = new THREE.Mesh(limbGeo, limbMat);
+  leftLeg.position.set(-0.2, 0.35, 0);
+  playerGroup.add(leftLeg);
+
+  const rightLeg = new THREE.Mesh(limbGeo, limbMat);
+  rightLeg.position.set(0.2, 0.35, 0);
+  playerGroup.add(rightLeg);
+
+  const player = {
+    hp: 150,
+    speed: 0.18,
+    rotationSpeed: 0.04,
+    velocityY: 0,
+    isGrounded: true,
+    weapon: 1,
+    attackCooldown: 0,
+    cannonCooldownFrames: 0,
+    isSwinging: false,
+    swingTime: 0,
+    killCount: 0
+  };
+
+  function triggerPlayerHitEffect() {
+    avatarMat.color.setHex(0xff0000);
+    limbMat.color.setHex(0xff0000);
+    setTimeout(() => {
+      avatarMat.color.setHex(0x00ff88);
+      limbMat.color.setHex(0x00cc66);
+    }, 150);
+  }
+
+  function damagePlayer(amount) {
+    player.hp -= amount;
+    triggerPlayerHitEffect();
+    updateUI();
+    if (player.hp <= 0) {
+      document.getElementById('game-over').style.display = 'block';
+    }
+  }
+
+  const gunGroup = new THREE.Group();
+  const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.5), new THREE.MeshStandardMaterial({ color: 0xdddd00 }));
+  gunGroup.add(gunBody);
+  gunGroup.position.set(0.45, 1.0, 0.3);
+  playerGroup.add(gunGroup);
+
+  const swordGroup = new THREE.Group();
+  const bladeGeo = new THREE.BoxGeometry(0.06, 1.5, 0.15);
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, metalness: 0.8, roughness: 0.2, emissive: 0x0044aa });
+  const blade = new THREE.Mesh(bladeGeo, bladeMat);
+  blade.position.y = 0.75;
+
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.3), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+  handle.position.y = 0;
+
+  swordGroup.add(blade);
+  swordGroup.add(handle);
+  swordGroup.position.set(0.45, 0.85, 0.3);
+  playerGroup.add(swordGroup);
+
+  const shieldGroup = new THREE.Group();
+  const shieldBodyGeo = new THREE.BoxGeometry(1.2, 1.5, 0.15);
+  const shieldMat = new THREE.MeshStandardMaterial({ color: 0x778899, metalness: 0.9, roughness: 0.3 });
+  const shieldBody = new THREE.Mesh(shieldBodyGeo, shieldMat);
+
+  const bossGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.2, 8);
+  const bossMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 1.0 });
+  const bossMesh = new THREE.Mesh(bossGeo, bossMat);
+  bossMesh.rotation.x = Math.PI / 2;
+  bossMesh.position.z = 0.05;
+  shieldGroup.add(shieldBody);
+  shieldGroup.add(bossMesh);
+
+  shieldGroup.position.set(0, 1.0, 0.5);
+  playerGroup.add(shieldGroup);
+
+  const cannonGroup = new THREE.Group();
+  const cannonBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 1.2, 12), new THREE.MeshStandardMaterial({ color: 0xffaa00, metalness: 0.8 }));
+  cannonBarrel.rotation.x = Math.PI / 2;
+  cannonGroup.add(cannonBarrel);
+  cannonGroup.position.set(0.45, 1.0, 0.5);
+  playerGroup.add(cannonGroup);
+
+  const slashGeo = new THREE.RingGeometry(0.72, 3.6, 16, 1, 0, Math.PI * 0.7);
+  const slashMat = new THREE.MeshBasicMaterial({ 
+    color: 0x00ffff, 
+    side: THREE.DoubleSide, 
+    transparent: true, 
+    opacity: 0 
+  });
+  const slashMesh = new THREE.Mesh(slashGeo, slashMat);
+  slashMesh.rotation.x = Math.PI / 2;
+  slashMesh.position.set(0, 1.2, 1.44);
+  playerGroup.add(slashMesh);
+
+  function updateWeaponVisibility() {
+    gunGroup.visible = (player.weapon === 1);
+    swordGroup.visible = (player.weapon === 2);
+    shieldGroup.visible = (player.weapon === 3);
+    cannonGroup.visible = (player.weapon === 4);
+  }
+  updateWeaponVisibility();
+
+  let isExtraStage = false;
+  const outerLightnings = [];
+  const redMarkers = [];
+
+  let isSharedHpActive = false;
+  let sharedHp = 2400;
+  const maxSharedHp = 2400;
+  let attackBuff = 0;
+
+  function triggerHpSharePhase() {
+    if (isSharedHpActive) return;
+    isSharedHpActive = true;
+    attackBuff = 10;
+
+    if (activeBoss && activeFujin) {
+      sharedHp = activeBoss.hp + activeFujin.hp;
+    } else {
+      sharedHp = 1600;
+    }
+
+    document.getElementById('boss-hp-tag').style.display = 'none';
+    document.getElementById('fujin-hp-tag').style.display = 'none';
+    document.getElementById('shared-hp-container').style.display = 'block';
+    updateSharedHpUI();
+  }
+
+  function updateSharedHpUI() {
+    const pct = Math.max(0, (sharedHp / maxSharedHp) * 100);
+    document.getElementById('shared-hp-bar-fill').style.width = `${pct}%`;
+    document.getElementById('shared-hp-text').innerText = `HP: ${Math.max(0, sharedHp)} / ${maxSharedHp}`;
+  }
+
+  function applySharedDamage(amount) {
+    sharedHp -= amount;
+    updateSharedHpUI();
+
+    if (activeBoss) activeBoss.hp = Math.max(0, sharedHp);
+    if (activeFujin) activeFujin.hp = Math.max(0, sharedHp);
+
+    if (sharedHp <= 0) {
+      if (activeBoss) {
+        scene.remove(activeBoss.group);
+        killStats.raijin++;
+        activeBoss = null;
+      }
+      if (activeFujin) {
+        scene.remove(activeFujin.group);
+        killStats.fujin++;
+        activeFujin = null;
+      }
+      triggerKillUI();
+      document.getElementById('shared-hp-container').style.display = 'none';
+      showClearScreen();
+      return true;
+    }
+    return false;
+  }
+
+  function createLightningMarker(x, z) {
+    const geo = new THREE.CircleGeometry(0.6, 32);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.7, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, 0.02, z);
+    scene.add(mesh);
+
+    redMarkers.push({
+      mesh: mesh,
+      x: x,
+      z: z,
+      timer: 60
+    });
+  }
+
+  function updateLightningMarkers() {
+    for (let i = redMarkers.length - 1; i >= 0; i--) {
+      const m = redMarkers[i];
+      m.timer--;
+
+      m.mesh.material.opacity = (m.timer % 10 < 5) ? 0.8 : 0.3;
+
+      if (m.timer <= 0) {
+        createLightningAt(m.x, m.z);
+        scene.remove(m.mesh);
+        m.mesh.geometry.dispose();
+        m.mesh.material.dispose();
+        redMarkers.splice(i, 1);
+      }
+    }
+  }
+
+  function createLightningAt(x, z) {
+    const radius = 0.6;
+    const height = 100;
+    const geo = new THREE.CylinderGeometry(radius, radius, height, 16);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.95 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, height / 2, z);
+    
+    scene.add(mesh);
+    outerLightnings.push({ mesh: mesh, life: 10 });
+
+    const strikePos = new THREE.Vector2(x, z);
+    const playerPos = new THREE.Vector2(playerGroup.position.x, playerGroup.position.z);
+    if (strikePos.distanceTo(playerPos) < (radius + 0.8)) {
+      damagePlayer(25 + attackBuff);
+    }
+  }
+
+  function createOuterLightning() {
+    if (!isExtraStage) return;
+
+    const side = Math.floor(Math.random() * 4);
+    let x = 0, z = 0;
+    const bound = 102;
+
+    if (side === 0) { x = (Math.random() - 0.5) * 220; z = bound; }
+    else if (side === 1) { x = (Math.random() - 0.5) * 220; z = -bound; }
+    else if (side === 2) { x = bound; z = (Math.random() - 0.5) * 220; }
+    else { x = -bound; z = (Math.random() - 0.5) * 220; }
+
+    const points = [];
+    let currY = 50;
+    let currX = x;
+    let currZ = z;
+
+    points.push(new THREE.Vector3(currX, currY, currZ));
+
+    while (currY > 0) {
+      currY -= 3 + Math.random() * 5;
+      currX += (Math.random() - 0.5) * 4;
+      currZ += (Math.random() - 0.5) * 4;
+      points.push(new THREE.Vector3(currX, Math.max(0, currY), currZ));
+    }
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color: 0x00ffff, linewidth: 3 });
+    const line = new THREE.Line(geometry, material);
+    
+    scene.add(line);
+    outerLightnings.push({ mesh: line, isLine: true, life: 6 });
+  }
+
+  function updateOuterLightnings() {
+    if (isExtraStage && Math.random() < 0.35) {
+      createOuterLightning();
+    }
+
+    for (let i = outerLightnings.length - 1; i >= 0; i--) {
+      const bolt = outerLightnings[i];
+      bolt.life--;
+      if (bolt.isLine) {
+        bolt.mesh.material.opacity = bolt.life / 6;
+      } else {
+        bolt.mesh.material.opacity = bolt.life / 10;
+      }
+
+      if (bolt.life <= 0) {
+        scene.remove(bolt.mesh);
+        bolt.mesh.geometry.dispose();
+        bolt.mesh.material.dispose();
+        outerLightnings.splice(i, 1);
+      }
+    }
+  }
+
+  const enemies = [];
+  class GiantEnemy {
+    constructor(x, z) {
+      this.hp = 80;
+      this.maxHp = 80;
+      this.isBoss = false;
+      this.attackTimer = Math.random() * 100;
+
+      this.group = new THREE.Group();
+      this.group.position.set(x, 0, z);
+
+      const bodyGeo = new THREE.BoxGeometry(3, 6, 3);
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0xff3333 });
+      this.mesh = new THREE.Mesh(bodyGeo, bodyMat);
+      this.mesh.position.y = 3;
+      this.mesh.castShadow = true;
+      this.group.add(this.mesh);
+
+      const eyeGeo = new THREE.BoxGeometry(2, 0.5, 0.5);
+      const eye = new THREE.Mesh(eyeGeo, new THREE.MeshBasicMaterial({ color: 0x000000 }));
+      eye.position.set(0, 5, 1.5);
+      this.group.add(eye);
+
+      scene.add(this.group);
+    }
+
+    update() {
+      this.group.lookAt(playerGroup.position.x, 0, playerGroup.position.z);
+      
+      if (this.group.position.distanceTo(playerGroup.position) > 8) {
+        this.group.translateZ(0.04);
+      }
+
+      this.attackTimer++;
+      if (this.attackTimer > 150) {
+        this.attackTimer = 0;
+        const spawnPos = this.group.position.clone();
+        spawnPos.y += 4;
+        const dir = playerGroup.position.clone().sub(spawnPos).normalize();
+        createBullet(spawnPos, dir, true, 0.3, 0.3, 10, false);
+      }
+    }
+
+    takeDamage(amount) {
+      this.hp -= amount;
+      this.mesh.material.color.setHex(0xffffff);
+      setTimeout(() => this.mesh.material.color.setHex(0xff3333), 100);
+
+      if (this.hp <= 0) {
+        scene.remove(this.group);
+        triggerKillUI();
+        killStats.mobs++;
+        return true;
+      }
+      return false;
+    }
+  }
+
+  let activeBoss = null;
+  let activeFujin = null;
+  let isNijiRyuOniActive = false;
+
+  class BossRedOni extends GiantEnemy {
+    constructor(x, z) {
+      super(x, z);
+      this.hp = 1000;
+      this.maxHp = 1000;
+      this.isBoss = true;
+
+      this.group.scale.set(2.5, 2.5, 2.5);
+      this.mesh.material.color.setHex(0xcc0000);
+
+      const hornGeo = new THREE.ConeGeometry(0.3, 1.2, 4);
+      const hornMat = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+      
+      const horn1 = new THREE.Mesh(hornGeo, hornMat);
+      horn1.position.set(-0.6, 6.5, 0);
+      horn1.rotation.z = -0.2;
+      this.group.add(horn1);
+
+      const horn2 = new THREE.Mesh(hornGeo, hornMat);
+      horn2.position.set(0.6, 6.5, 0);
+      horn2.rotation.z = 0.2;
+      this.group.add(horn2);
+    }
+
+    update() {
+      this.group.lookAt(playerGroup.position.x, 0, playerGroup.position.z);
+      
+      if (this.group.position.distanceTo(playerGroup.position) > 12) {
+        this.group.translateZ(0.03);
+      }
+
+      this.attackTimer++;
+      if (this.attackTimer > 90) {
+        this.attackTimer = 0;
+        const spawnPos = this.group.position.clone();
+        spawnPos.y += 10;
+        const dir = playerGroup.position.clone().sub(spawnPos).normalize();
+        createBullet(spawnPos, dir, true, 0.4, 0.6, 10, false);
+      }
+    }
+
+    takeDamage(amount) {
+      this.hp -= amount;
+      this.mesh.material.color.setHex(0xffffff);
+      setTimeout(() => this.mesh.material.color.setHex(0xcc0000), 100);
+
+      document.getElementById('boss-hp-val').innerText = `HP: ${Math.max(0, this.hp)} / 1000`;
+
+      if (this.hp <= 0) {
+        scene.remove(this.group);
+        triggerKillUI();
+        killStats.redOni++;
+        document.getElementById('boss-hp-tag').style.display = 'none';
+        activeBoss = null;
+        
+        setTimeout(() => {
+          spawnBoss2();
+        }, 60000);
+
+        return true;
+      }
+      return false;
+    }
+  }
+
+  class BossNijiRyuOni extends GiantEnemy {
+    constructor(x, z) {
+      super(x, z);
+      this.hp = 1750;
+      this.maxHp = 1750;
+      this.isBoss = true;
+
+      this.group.scale.set(2.5, 2.5, 2.5);
+      this.mesh.material.color.setHex(0x9900ff);
+
+      const hornGeo = new THREE.ConeGeometry(0.3, 1.5, 6);
+      this.hornMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+      
+      const horn1 = new THREE.Mesh(hornGeo, this.hornMat);
+      horn1.position.set(-0.7, 6.7, 0);
+      horn1.rotation.z = -0.2;
+      this.group.add(horn1);
+
+      const horn2 = new THREE.Mesh(hornGeo, this.hornMat);
+      horn2.position.set(0.7, 6.7, 0);
+      horn2.rotation.z = 0.2;
+      this.group.add(horn2);
+
+      const energyGeo = new THREE.SphereGeometry(0.5, 16, 16);
+      this.energyMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0 });
+      this.energyOrb = new THREE.Mesh(energyGeo, this.energyMat);
+      this.energyOrb.position.set(0, 6.7, 0);
+      this.group.add(this.energyOrb);
+
+      const clubGeo = new THREE.CylinderGeometry(0.3, 0.6, 6, 8);
+      const clubMat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.8 });
+      this.club = new THREE.Mesh(clubGeo, clubMat);
+      this.club.position.set(2.0, 3.0, 1.0);
+      this.club.rotation.x = Math.PI / 4;
+      this.group.add(this.club);
+
+      this.laserGroup = new THREE.Group();
+      
+      const outerGeo = new THREE.CylinderGeometry(6, 6, 200, 32);
+      outerGeo.rotateX(Math.PI / 2);
+      outerGeo.translate(0, 0, 100);
+      this.laserOuterMat = new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0, side: THREE.DoubleSide });
+      this.laserOuterMesh = new THREE.Mesh(outerGeo, this.laserOuterMat);
+
+      const innerGeo = new THREE.CylinderGeometry(3, 3, 200, 32);
+      innerGeo.rotateX(Math.PI / 2);
+      innerGeo.translate(0, 0, 100);
+      this.laserInnerMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 });
+      this.laserInnerMesh = new THREE.Mesh(innerGeo, this.laserInnerMat);
+
+      this.rings = [];
+      const ringGeo = new THREE.TorusGeometry(6.5, 0.3, 16, 32);
+      this.ringMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0 });
+      for(let r=0; r<5; r++) {
+        const ring = new THREE.Mesh(ringGeo, this.ringMat);
+        ring.position.z = 20 + r * 35;
+        this.laserGroup.add(ring);
+        this.rings.push(ring);
+      }
+
+      this.laserGroup.add(this.laserOuterMesh);
+      this.laserGroup.add(this.laserInnerMesh);
+      this.laserGroup.position.set(0, 6.0, 0);
+      this.group.add(this.laserGroup);
+
+      this.phase = 0;
+      this.phaseTimer = 0;
+      this.chargeFrames = 0;
+      this.swingFrames = 0;
+      this.laserChargeFrames = 0;
+      this.laserFiringFrames = 0;
+      this.hasHitPlayerWithLaser = false;
+    }
+
+    update() {
+      if (this.laserChargeFrames === 0 && this.laserFiringFrames === 0) {
+        this.group.lookAt(playerGroup.position.x, 0, playerGroup.position.z);
+      }
+      
+      const hue = (Date.now() * 0.001) % 1;
+      this.hornMat.color.setHSL(hue, 1.0, 0.5);
+
+      if (this.laserFiringFrames > 0) {
+        this.laserFiringFrames--;
+
+        const currentHue = (Date.now() * 0.006) % 1;
+        this.laserOuterMat.color.setHSL(currentHue, 1.0, 0.6);
+        this.ringMat.color.setHSL((currentHue + 0.5) % 1, 1.0, 0.5);
+        
+        this.laserOuterMat.opacity = 0.75 + Math.sin(Date.now() * 0.02) * 0.15;
+        this.laserInnerMat.opacity = 0.9;
+        this.ringMat.opacity = 0.85;
+
+        this.rings.forEach((ring, idx) => {
+          ring.rotation.z += 0.1;
+          ring.position.z = ((Date.now() * 0.1 + idx * 40) % 180) + 10;
+        });
+
+        const bossWorldPos = this.group.position.clone();
+        const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.group.quaternion);
+        const toPlayer = playerGroup.position.clone().sub(bossWorldPos);
+        
+        const projectionLength = toPlayer.dot(forward);
+        if (projectionLength > 0 && projectionLength < 200) {
+          const closestPoint = bossWorldPos.clone().addScaledVector(forward, projectionLength);
+          const perpDist = playerGroup.position.distanceTo(closestPoint);
+
+          if (perpDist <= 15.0 && !this.hasHitPlayerWithLaser) {
+            damagePlayer(80);
+            this.hasHitPlayerWithLaser = true;
+          }
+        }
+
+        if (this.laserFiringFrames === 0) {
+          this.laserOuterMat.opacity = 0;
+          this.laserInnerMat.opacity = 0;
+          this.ringMat.opacity = 0;
+          this.phase = 0;
+          this.phaseTimer = 0;
+        }
+        return;
+      }
+
+      if (this.laserChargeFrames > 0) {
+        this.laserChargeFrames--;
+        const progress = 1 - (this.laserChargeFrames / 240);
+        this.energyOrb.scale.setScalar(1 + progress * 12);
+        this.energyMat.opacity = 0.5 + progress * 0.5;
+
+        if (this.laserChargeFrames === 0) {
+          this.energyMat.opacity = 0;
+          this.laserFiringFrames = 300;
+          this.hasHitPlayerWithLaser = false;
+        }
+        return;
+      }
+
+      if (this.chargeFrames > 0) {
+        this.chargeFrames--;
+        const progress = 1 - (this.chargeFrames / 420);
+        this.energyOrb.scale.setScalar(1 + progress * 5);
+        this.energyMat.opacity = 0.3 + progress * 0.7;
+
+        if (this.chargeFrames === 0) {
+          this.energyMat.opacity = 0;
+          const bossWorldPos = this.group.position.clone();
+          
+          createShockwave(bossWorldPos);
+          
+          const dist = playerGroup.position.distanceTo(bossWorldPos);
+          if (dist <= 35) {
+            damagePlayer(60);
+          }
+
+          this.laserChargeFrames = 240;
+        }
+        return;
+      }
+
+      if (this.swingFrames > 0) {
+        this.swingFrames--;
+        this.club.rotation.y += 0.2;
+        const bossWorldPos = this.group.position.clone();
+        
+        if (this.swingFrames % 15 === 0) {
+          createBlockSpark(bossWorldPos.clone().add(new THREE.Vector3(0, 3, 0)));
+        }
+
+        const dist = playerGroup.position.distanceTo(bossWorldPos);
+        if (dist <= 32.4 && this.swingFrames % 30 === 0) {
+          damagePlayer(20);
+        }
+
+        if (this.swingFrames === 0) {
+          this.club.rotation.set(Math.PI / 4, 0, 0);
+          this.phase = 2;
+          this.chargeFrames = 420;
+        }
+        return;
+      }
+
+      if (this.group.position.distanceTo(playerGroup.position) > 12) {
+        this.group.translateZ(0.03);
+      }
+
+      this.phaseTimer++;
+
+      if (this.phase === 0) {
+        if (this.phaseTimer > 80) {
+          const spawnPos = this.group.position.clone();
+          spawnPos.y += 10;
+          const dir = playerGroup.position.clone().sub(spawnPos).normalize();
+          createBullet(spawnPos, dir, true, 0.4, 0.84, 10, false);
+          this.phase = 1;
+          this.phaseTimer = 0;
+        }
+      } else if (this.phase === 1) {
+        if (this.phaseTimer > 60) {
+          this.swingFrames = 180;
+        }
+      }
+    }
+
+    takeDamage(amount) {
+      this.hp -= amount;
+      this.mesh.material.color.setHex(0xffffff);
+      setTimeout(() => this.mesh.material.color.setHex(0x9900ff), 100);
+
+      document.getElementById('boss-hp-val').innerText = `HP: ${Math.max(0, this.hp)} / 1750`;
+
+      if (this.hp <= 0) {
+        scene.remove(this.group);
+        triggerKillUI();
+        killStats.nijiRyuOni++;
+        document.getElementById('boss-hp-tag').style.display = 'none';
+        activeBoss = null;
+        showClearScreen();
+        return true;
+      }
+      return false;
+    }
+  }
+
+  class BossFujin extends GiantEnemy {
+    constructor(x, z) {
+      super(x, z);
+      this.hp = 1200;
+      this.maxHp = 1200;
+      this.isBoss = true;
+
+      this.group.scale.set(2.3, 2.3, 2.3);
+      this.mesh.material.color.setHex(0x00cc66);
+
+      const bagGeo = new THREE.TorusGeometry(3.0, 0.8, 16, 32, Math.PI * 1.5);
+      const bagMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+      this.bagMesh = new THREE.Mesh(bagGeo, bagMat);
+      this.bagMesh.position.set(0, 4.5, -0.5);
+      this.bagMesh.rotation.x = Math.PI / 2;
+      this.group.add(this.bagMesh);
+
+      this.moveSpeed = 0.08;
+      this.attackTimer = 0;
+    }
+
+    update() {
+      this.group.lookAt(playerGroup.position.x, 0, playerGroup.position.z);
+
+      const dist = this.group.position.distanceTo(playerGroup.position);
+      if (dist > 6) {
+        this.group.translateZ(this.moveSpeed);
+      }
+
+      this.attackTimer++;
+
+      if (this.attackTimer % 180 === 0) {
+        const spawnPos = this.group.position.clone();
+        spawnPos.y += 5;
+        const dir = playerGroup.position.clone().sub(spawnPos).normalize();
+        createBullet(spawnPos, dir, true, 0.6, 0.5, 15 + attackBuff, false);
+      }
+
+      if (dist <= 3.5 && this.attackTimer % 90 === 0) {
+        damagePlayer(30 + attackBuff);
+      }
+    }
+
+    takeDamage(amount) {
+      this.mesh.material.color.setHex(0xffffff);
+      setTimeout(() => this.mesh.material.color.setHex(0x00cc66), 100);
+
+      if (isSharedHpActive) {
+        return applySharedDamage(amount);
+      }
+
+      this.hp -= amount;
+      document.getElementById('fujin-hp-val').innerText = `HP: ${Math.max(0, this.hp)} / 1200`;
+
+      if (this.hp <= 800) {
+        triggerHpSharePhase();
+      }
+
+      if (this.hp <= 0) {
+        scene.remove(this.group);
+        triggerKillUI();
+        killStats.fujin++;
+        document.getElementById('fujin-hp-tag').style.display = 'none';
+        activeFujin = null;
+        if (!activeBoss) showClearScreen();
+        return true;
+      }
+      return false;
+    }
+  }
+
+  class BossRaijin extends GiantEnemy {
+    constructor(x, z) {
+      super(x, z);
+      this.hp = 1800;
+      this.maxHp = 1800;
+      this.isBoss = true;
+      this.fujinSpawned = false;
+
+      this.group.scale.set(2.5, 2.5, 2.5);
+      this.mesh.material.color.setHex(0xffaa00);
+
+      this.taikoGroup = new THREE.Group();
+      const ringRadius = 3.5;
+      const numDrums = 8;
+      const drumGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 12);
+      const drumMat = new THREE.MeshStandardMaterial({ color: 0x880000, metalness: 0.5 });
+
+      for (let i = 0; i < numDrums; i++) {
+        const angle = (i / numDrums) * Math.PI * 2;
+        const drum = new THREE.Mesh(drumGeo, drumMat);
+        drum.position.set(Math.cos(angle) * ringRadius, Math.sin(angle) * ringRadius + 4.5, -0.5);
+        drum.rotation.x = Math.PI / 2;
+        this.taikoGroup.add(drum);
+      }
+      this.group.add(this.taikoGroup);
+
+      this.laserGroup = new THREE.Group();
+      
+      const outerGeo = new THREE.CylinderGeometry(3, 3, 200, 32);
+      outerGeo.rotateX(Math.PI / 2);
+      outerGeo.translate(0, 0, 100);
+      this.laserOuterMat = new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0, side: THREE.DoubleSide });
+      this.laserOuterMesh = new THREE.Mesh(outerGeo, this.laserOuterMat);
+
+      const innerGeo = new THREE.CylinderGeometry(1.5, 1.5, 200, 32);
+      innerGeo.rotateX(Math.PI / 2);
+      innerGeo.translate(0, 0, 100);
+      this.laserInnerMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 });
+      this.laserInnerMesh = new THREE.Mesh(innerGeo, this.laserInnerMat);
+
+      this.laserGroup.add(this.laserOuterMesh);
+      this.laserGroup.add(this.laserInnerMesh);
+      this.laserGroup.position.set(0, 5.0, 0);
+      this.group.add(this.laserGroup);
+
+      const orbGeo = new THREE.SphereGeometry(0.5, 16, 16);
+      this.orbMat = new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0 });
+      this.orbMesh = new THREE.Mesh(orbGeo, this.orbMat);
+      this.orbMesh.position.set(0, 5.0, 0);
+      this.group.add(this.orbMesh);
+
+      this.state = 0;
+      this.stateTimer = 0;
+      this.strikeTimer = 0;
+      this.hasHitPlayerWithLaser = false;
+    }
+
+    update() {
+      this.taikoGroup.rotation.z += 0.02;
+
+      if (this.state === 0) {
+        this.group.lookAt(playerGroup.position.x, 0, playerGroup.position.z);
+        this.stateTimer++;
+        if (this.stateTimer > 300) {
+          this.state = 1;
+          this.stateTimer = 0;
+          this.strikeTimer = 0;
+        }
+      } else if (this.state === 1) {
+        this.group.lookAt(playerGroup.position.x, 0, playerGroup.position.z);
+        this.stateTimer++;
+        this.strikeTimer++;
+
+        if (this.strikeTimer >= 30) {
+          this.strikeTimer = 0;
+          const randX = (Math.random() - 0.5) * 180;
+          const randZ = (Math.random() - 0.5) * 180;
+          createLightningMarker(randX, randZ);
+        }
+
+        if (this.stateTimer > 450) {
+          this.state = 2;
+          this.stateTimer = 0;
+        }
+      } else if (this.state === 2) {
+        this.stateTimer++;
+        const progress = this.stateTimer / 180;
+        this.orbMesh.scale.setScalar(1 + progress * 8);
+        this.orbMat.opacity = 0.4 + progress * 0.6;
+
+        if (this.stateTimer > 180) {
+          this.orbMat.opacity = 0;
+          this.state = 3;
+          this.stateTimer = 0;
+          this.hasHitPlayerWithLaser = false;
+        }
+      } else if (this.state === 3) {
+        this.stateTimer++;
+        
+        this.laserOuterMat.opacity = 0.8 + Math.sin(Date.now() * 0.05) * 0.2;
+        this.laserInnerMat.opacity = 0.95;
+
+        const bossWorldPos = this.group.position.clone();
+        const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.group.quaternion);
+        const toPlayer = playerGroup.position.clone().sub(bossWorldPos);
+        
+        const projectionLength = toPlayer.dot(forward);
+        if (projectionLength > 0 && projectionLength < 200) {
+          const closestPoint = bossWorldPos.clone().addScaledVector(forward, projectionLength);
+          const perpDist = playerGroup.position.distanceTo(closestPoint);
+
+          if (perpDist <= 8.0 && this.stateTimer % 20 === 0) {
+            damagePlayer(30 + attackBuff);
+          }
+        }
+
+        if (this.stateTimer > 420) {
+          this.laserOuterMat.opacity = 0;
+          this.laserInnerMat.opacity = 0;
+          this.state = 0;
+          this.stateTimer = 0;
+        }
+      }
+    }
+
+    takeDamage(amount) {
+      this.mesh.material.color.setHex(0xffffff);
+      setTimeout(() => this.mesh.material.color.setHex(0xffaa00), 100);
+
+      if (isSharedHpActive) {
+        return applySharedDamage(amount);
+      }
+
+      this.hp -= amount;
+      document.getElementById('boss-hp-val').innerText = `HP: ${Math.max(0, this.hp)} / 1800`;
+
+      if (this.hp <= 1200 && !this.fujinSpawned) {
+        this.fujinSpawned = true;
+        spawnBossFujin(this.group.position.x + 5, this.group.position.z + 5);
+      }
+
+      if (this.hp <= 800) {
+        triggerHpSharePhase();
+      }
+
+      if (this.hp <= 0) {
+        scene.remove(this.group);
+        triggerKillUI();
+        killStats.raijin++;
+        document.getElementById('boss-hp-tag').style.display = 'none';
+        activeBoss = null;
+        if (!activeFujin) showClearScreen();
+        return true;
+      }
+      return false;
+    }
+  }
+
+  function spawnEnemy() {
+    if (player.hp <= 0 || isNijiRyuOniActive || isExtraStage) return;
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 50 + Math.random() * 10;
+    const enemy = new GiantEnemy(
+      playerGroup.position.x + Math.cos(angle) * radius,
+      playerGroup.position.z + Math.sin(angle) * radius
+    );
+    enemies.push(enemy);
+    updateUI();
+  }
+
+  function spawnBoss1() {
+    if (player.hp <= 0 || activeBoss || isExtraStage) return;
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 60;
+    activeBoss = new BossRedOni(
+      playerGroup.position.x + Math.cos(angle) * radius,
+      playerGroup.position.z + Math.sin(angle) * radius
+    );
+    enemies.push(activeBoss);
+    document.getElementById('boss-name').innerText = "赤鬼";
+    document.getElementById('boss-hp-tag').style.display = 'block';
+    document.getElementById('boss-hp-val').innerText = `HP: 1000 / 1000`;
+    updateUI();
+  }
+
+  function spawnBoss2() {
+    if (player.hp <= 0 || activeBoss || isExtraStage) return;
+    
+    isNijiRyuOniActive = true;
+
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      if (!enemies[i].isBoss) {
+        scene.remove(enemies[i].group);
+        enemies.splice(i, 1);
+      }
+    }
+
+    activeBoss = new BossNijiRyuOni(0, 0);
+    enemies.push(activeBoss);
+    document.getElementById('boss-name').innerText = "虹龍鬼";
+    document.getElementById('boss-hp-tag').style.display = 'block';
+    document.getElementById('boss-hp-val').innerText = `HP: 1750 / 1750`;
+    updateUI();
+  }
+
+  function spawnBossRaijin() {
+    if (player.hp <= 0 || activeBoss) return;
+    activeBoss = new BossRaijin(0, 40);
+    enemies.push(activeBoss);
+    document.getElementById('boss-name').innerText = "雷神";
+    document.getElementById('boss-hp-tag').style.display = 'block';
+    document.getElementById('boss-hp-val').innerText = `HP: 1800 / 1800`;
+    updateUI();
+  }
+
+  function spawnBossFujin(x, z) {
+    if (player.hp <= 0 || activeFujin) return;
+    activeFujin = new BossFujin(x, z);
+    enemies.push(activeFujin);
+    document.getElementById('fujin-hp-tag').style.display = 'block';
+    document.getElementById('fujin-hp-val').innerText = `HP: 1200 / 1200`;
+    updateUI();
+  }
+
+  function goToExtraStage() {
+    isExtraStage = true;
+    document.getElementById('extra-modal').style.display = 'none';
+    document.getElementById('clear-screen').style.display = 'none';
+
+    scene.background = new THREE.Color(0x4a758c);
+    scene.fog = new THREE.FogExp2(0x4a758c, 0.012);
+
+    grid.visible = false;
+    floorMat.map = createCloudTexture();
+    floorMat.color.setHex(0xffffff);
+    floorMat.needsUpdate = true;
+
+    player.hp = 200;
+    playerGroup.position.set(0, 0, 0);
+    playerGroup.rotation.set(0, 0, 0);
+    updateUI();
+
+    setTimeout(() => {
+      spawnBossRaijin();
+    }, 2000);
+  }
+
+  const keys = {};
+  let extraModalActive = false;
+
+  window.addEventListener('keydown', (e) => {
+    keys[e.code] = true;
+    if (e.code === 'Digit1') { player.weapon = 1; updateWeaponVisibility(); updateUI(); }
+    if (e.code === 'Digit2') { player.weapon = 2; updateWeaponVisibility(); updateUI(); }
+    if (e.code === 'Digit3') { player.weapon = 3; updateWeaponVisibility(); updateUI(); }
+    if (e.code === 'Digit4') { player.weapon = 4; updateWeaponVisibility(); updateUI(); }
+
+    if (extraModalActive) {
+      if (e.code === 'KeyP') {
+        extraModalActive = false;
+        goToExtraStage();
+      } else if (e.code === 'KeyO') {
+        document.getElementById('extra-modal').style.display = 'none';
+        extraModalActive = false;
+      }
+    }
+  });
+  window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+  document.getElementById('btn-yes').addEventListener('click', () => {
+    if (extraModalActive) {
+      extraModalActive = false;
+      goToExtraStage();
+    }
+  });
+
+  document.getElementById('btn-no').addEventListener('click', () => {
+    if (extraModalActive) {
+      document.getElementById('extra-modal').style.display = 'none';
+      extraModalActive = false;
+    }
+  });
+
+  let killTimer = null;
+  let critTimer = null;
+
+  function triggerKillUI() {
+    player.killCount++;
+    updateUI();
+
+    const killText = document.getElementById('kill-text');
+    killText.classList.remove('show');
+    void killText.offsetWidth;
+    killText.classList.add('show');
+
+    if (killTimer) clearTimeout(killTimer);
+    killTimer = setTimeout(() => {
+      killText.classList.remove('show');
+    }, 800);
+  }
+
+  function triggerCriticalUI() {
+    const critText = document.getElementById('critical-text');
+    critText.classList.remove('show');
+    void critText.offsetWidth;
+    critText.classList.add('show');
+
+    if (critTimer) clearTimeout(critTimer);
+    critTimer = setTimeout(() => {
+      critText.classList.remove('show');
+    }, 1200);
+  }
+
+  function calculateDamage(baseDamage) {
+    if (Math.random() < 0.001) {
+      triggerCriticalUI();
+      player.hp += 70;
+      updateUI();
+      return 99999;
+    }
+    return baseDamage;
+  }
+
+  const bullets = [];
+  function createBullet(position, direction, isEnemy = false, speed = 0.8, radius = 0.3, damage = 20, isCannon = false) {
+    const geo = new THREE.SphereGeometry(radius, 12, 12);
+    const mat = new THREE.MeshBasicMaterial({ color: isEnemy ? 0xff0055 : (isCannon ? 0xff8800 : 0xffff00) });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(position);
+    scene.add(mesh);
+
+    bullets.push({
+      mesh: mesh,
+      direction: direction.clone().normalize(),
+      speed: speed,
+      isEnemy: isEnemy,
+      radius: radius,
+      damage: damage,
+      isCannon: isCannon,
+      life: 120
+    });
+  }
+
+  const shockwaves = [];
+  function createShockwave(position) {
+    const geo = new THREE.SphereGeometry(1, 32, 32);
+    const mat = new THREE.MeshBasicMaterial({ 
+      color: 0xff6600, 
+      transparent: true, 
+      opacity: 0.6, 
+      wireframe: true 
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(position);
+    scene.add(mesh);
+
+    shockwaves.push({
+      mesh: mesh,
+      scale: 1,
+      maxScale: 50,
+      life: 20
+    });
+
+    const shockwaveRadius = 50;
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const enemy = enemies[i];
+      const enemyPos = enemy.group.position;
+      const dist = position.distanceTo(enemyPos);
+
+      if (dist <= shockwaveRadius) {
+        const dmg = calculateDamage(80);
+        if (enemy.takeDamage(dmg)) {
+          enemies.splice(i, 1);
+          updateUI();
+        }
+      }
+    }
+  }
+
+  function updateShockwaves() {
+    for (let i = shockwaves.length - 1; i >= 0; i--) {
+      const sw = shockwaves[i];
+      sw.life--;
+      sw.scale += (sw.maxScale - sw.scale) * 0.2;
+      sw.mesh.scale.set(sw.scale, sw.scale, sw.scale);
+      sw.mesh.material.opacity = sw.life / 20;
+
+      if (sw.life <= 0) {
+        scene.remove(sw.mesh);
+        shockwaves.splice(i, 1);
+      }
+    }
+  }
+
+  const sparks = [];
+  function createBlockSpark(position) {
+    const flashGeo = new THREE.SphereGeometry(0.8, 8, 8);
+    const flashMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
+    const flashMesh = new THREE.Mesh(flashGeo, flashMat);
+    flashMesh.position.copy(position);
+    scene.add(flashMesh);
+
+    const sparkGroup = new THREE.Group();
+    sparkGroup.position.copy(position);
+
+    const particleGeo = new THREE.SphereGeometry(0.2, 6, 6);
+    const particleMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+
+    const particles = [];
+    for (let i = 0; i < 5; i++) {
+      const p = new THREE.Mesh(particleGeo, particleMat);
+      const vel = new THREE.Vector3(
+        (Math.random() - 0.5) * 0.4,
+        (Math.random() - 0.5) * 0.4 + 0.1,
+        (Math.random() - 0.5) * 0.4
+      );
+      sparkGroup.add(p);
+      particles.push({ mesh: p, vel: vel });
+    }
+
+    scene.add(sparkGroup);
+
+    sparks.push({
+      flash: flashMesh,
+      group: sparkGroup,
+      particles: particles,
+      life: 12
+    });
+  }
+
+  function updateSparks() {
+    for (let i = sparks.length - 1; i >= 0; i--) {
+      const s = sparks[i];
+      s.life--;
+
+      s.flash.scale.multiplyScalar(0.85);
+      s.flash.material.opacity = s.life / 12;
+
+      s.particles.forEach(p => {
+        p.mesh.position.add(p.vel);
+      });
+
+      if (s.life <= 0) {
+        scene.remove(s.flash);
+        scene.remove(s.group);
+        sparks.splice(i, 1);
+      }
+    }
+  }
+
+  function showClearScreen() {
+    const totalScore = (killStats.mobs * 2) + (killStats.redOni * 10) + (killStats.nijiRyuOni * 30);
+    
+    const rankElem = document.getElementById('clear-rank');
+    rankElem.className = '';
+
+    let rankText = '';
+    if (totalScore > 150) {
+      rankText = 'S';
+      rankElem.classList.add('rank-s');
+    } else if (totalScore > 100) {
+      rankText = 'A';
+    } else if (totalScore > 75) {
+      rankText = 'B';
+    } else if (totalScore > 50) {
+      rankText = 'C';
+    }
+
+    rankElem.innerText = rankText ? ` (${rankText})` : '';
+    document.getElementById('clear-score').childNodes[0].nodeValue = `SCORE: ${totalScore}`;
+    document.getElementById('clear-screen').style.display = 'block';
+
+    // 3秒後に「パーフェクトクリア」を消して、0.01秒後に「SSS」を表示
+    setTimeout(() => {
+      document.getElementById('clear-title').style.display = 'none';
+      setTimeout(() => {
+        document.getElementById('sss-text').style.display = 'block';
+      }, 10); // 0.01秒 (10ミリ秒)
+    }, 3000); // 3秒 (3000ミリ秒)
+
+    if (totalScore > 200) {
+      setTimeout(() => {
+        document.getElementById('clear-title').style.display = 'none';
+        document.getElementById('sss-text').style.display = 'none';
+        document.getElementById('clear-score').style.display = 'none';
+        document.getElementById('god-text').style.display = 'block';
+
+        setTimeout(() => {
+          document.getElementById('extra-modal').style.display = 'block';
+          extraModalActive = true;
+        }, 5000);
+
+      }, 8000);
+    }
+  }
+
+  const spawnInterval = setInterval(spawnEnemy, 2000);
+  spawnEnemy();
+
+  let elapsedTime = 0;
+  let bossSpawned = false;
+  setInterval(() => {
+    if (player.hp <= 0) return;
+    elapsedTime++;
+
+    const mins = String(Math.floor(elapsedTime / 60)).padStart(2, '0');
+    const secs = String(elapsedTime % 60).padStart(2, '0');
+    document.getElementById('timer').innerText = `${mins}:${secs}`;
+
+    if (elapsedTime >= 60 && !bossSpawned && !isExtraStage) {
+      bossSpawned = true;
+      spawnBoss1();
+    }
+  }, 1000);
+
+  function updateUI() {
+    document.getElementById('hp').innerText = Math.max(0, player.hp);
+    
+    let wName = "銃 (20 DMG)";
+    if (player.weapon === 2) wName = "剣 (50 DMG)";
+    if (player.weapon === 3) wName = "鉄の盾 (ガード)";
+    if (player.weapon === 4) {
+      const cdSecs = Math.ceil(player.cannonCooldownFrames / 60);
+      wName = cdSecs > 0 ? `キャノン (充填中 ${cdSecs}s)` : "キャノン (250 DMG)";
+    }
+    
+    document.getElementById('weapon').innerText = wName;
+    document.getElementById('enemies').innerText = enemies.length;
+    document.getElementById('kill-count').innerText = player.killCount;
+  }
+  updateUI();
+
+  function performAttack() {
+    if (player.attackCooldown > 0) return;
+
+    if (player.weapon === 1) {
+      player.attackCooldown = 15;
+      const bulletSpawn = playerGroup.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+      const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(playerGroup.quaternion);
+      createBullet(bulletSpawn, dir, false, 0.8, 0.2, 20, false);
+    } else if (player.weapon === 2) {
+      player.attackCooldown = 25;
+      player.isSwinging = true;
+      player.swingTime = 0;
+
+      const attackRange = 15.12;
+      const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(playerGroup.quaternion);
+
+      for (let index = enemies.length - 1; index >= 0; index--) {
+        const enemy = enemies[index];
+        const toEnemy = enemy.group.position.clone().sub(playerGroup.position);
+        const dist = toEnemy.length();
+
+        if (dist < attackRange * (enemy.isBoss ? 2 : 1)) {
+          toEnemy.normalize();
+          if (forward.dot(toEnemy) > 0.3) {
+            const dmg = calculateDamage(50);
+            if (enemy.takeDamage(dmg)) {
+              enemies.splice(index, 1);
+              updateUI();
+            }
+          }
+        }
+      }
+    } else if (player.weapon === 4) {
+      if (player.cannonCooldownFrames > 0) return;
+
+      player.attackCooldown = 30;
+      player.cannonCooldownFrames = 3600;
+      
+      const bulletSpawn = playerGroup.position.clone().add(new THREE.Vector3(0, 3.5, 0));
+      const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(playerGroup.quaternion);
+      dir.y = 0;
+      dir.normalize();
+
+      createBullet(bulletSpawn, dir, false, 0.9, 1.2, 250, true);
+      updateUI();
+    }
+  }
+
+  const tempV = new THREE.Vector3();
+  function updateBossHealthTagPosition() {
+    if (isSharedHpActive) return;
+
+    if (activeBoss) {
+      tempV.copy(activeBoss.group.position);
+      tempV.y += 18;
+      tempV.project(camera);
+
+      if (tempV.z <= 1.0) {
+        const x = (tempV.x * .5 + .5) * window.innerWidth;
+        const y = (tempV.y * -.5 + .5) * window.innerHeight;
+        const tag = document.getElementById('boss-hp-tag');
+        tag.style.display = 'block';
+        tag.style.left = `${x}px`;
+        tag.style.top = `${y}px`;
+      } else {
+        document.getElementById('boss-hp-tag').style.display = 'none';
+      }
+    }
+
+    if (activeFujin) {
+      const tempV2 = new THREE.Vector3();
+      tempV2.copy(activeFujin.group.position);
+      tempV2.y += 16;
+      tempV2.project(camera);
+
+      if (tempV2.z <= 1.0) {
+        const x = (tempV2.x * .5 + .5) * window.innerWidth;
+        const y = (tempV2.y * -.5 + .5) * window.innerHeight;
+        const tag = document.getElementById('fujin-hp-tag');
+        tag.style.display = 'block';
+        tag.style.left = `${x}px`;
+        tag.style.top = `${y}px`;
+      } else {
+        document.getElementById('fujin-hp-tag').style.display = 'none';
+      }
+    }
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+
+    if (player.hp <= 0) {
+      clearInterval(spawnInterval);
+      return;
+    }
+
+    if (player.cannonCooldownFrames > 0) {
+      player.cannonCooldownFrames--;
+      if (player.cannonCooldownFrames % 60 === 0 && player.weapon === 4) {
+        updateUI();
+      }
+    }
+
+    if (keys['ArrowLeft']) playerGroup.rotation.y += player.rotationSpeed;
+    if (keys['ArrowRight']) playerGroup.rotation.y -= player.rotationSpeed;
+
+    const moveVector = new THREE.Vector3();
+    if (keys['KeyW']) moveVector.z += 1;
+    if (keys['KeyS']) moveVector.z -= 1;
+    if (keys['KeyA']) moveVector.x += 1;
+    if (keys['KeyD']) moveVector.x -= 1;
+
+    if (moveVector.length() > 0) {
+      moveVector.normalize();
+      moveVector.applyQuaternion(playerGroup.quaternion);
+      playerGroup.position.addScaledVector(moveVector, player.speed);
+    }
+
+    const BOUND = (MAP_SIZE / 2) - 2;
+    playerGroup.position.x = Math.max(-BOUND, Math.min(BOUND, playerGroup.position.x));
+    playerGroup.position.z = Math.max(-BOUND, Math.min(BOUND, playerGroup.position.z));
+
+    if (keys['Space'] && player.isGrounded) {
+      player.velocityY = 0.25;
+      player.isGrounded = false;
+    }
+
+    playerGroup.position.y += player.velocityY;
+    if (!player.isGrounded) player.velocityY -= 0.012;
+
+    if (playerGroup.position.y <= 0) {
+      playerGroup.position.y = 0;
+      player.velocityY = 0;
+      player.isGrounded = true;
+    }
+
+    if (keys['ArrowUp']) performAttack();
+    if (player.attackCooldown > 0) player.attackCooldown--;
+
+    if (player.isSwinging) {
+      player.swingTime += 0.15;
+      swordGroup.rotation.x = Math.sin(player.swingTime) * 1.8;
+      swordGroup.rotation.y = -Math.cos(player.swingTime) * 1.5;
+      swordGroup.rotation.z = -1.0;
+
+      slashMat.opacity = Math.sin(player.swingTime * Math.PI) * 0.8;
+      slashMesh.rotation.z = player.swingTime * 2;
+
+      if (player.swingTime >= Math.PI) {
+        player.isSwinging = false;
+        swordGroup.rotation.set(0, 0, 0);
+        slashMat.opacity = 0;
+      }
+    }
+
+    updateSparks();
+    updateShockwaves();
+    updateLightningMarkers();
+    updateOuterLightnings();
+
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      const b = bullets[i];
+      b.mesh.position.addScaledVector(b.direction, b.speed);
+      b.life--;
+
+      if (!b.isEnemy) {
+        for (let j = enemies.length - 1; j >= 0; j--) {
+          const enemy = enemies[j];
+          const enemyCenter = enemy.group.position.clone().add(new THREE.Vector3(0, enemy.isBoss ? 7.5 : 3.0, 0));
+          const hitRadius = (enemy.isBoss ? 8.0 : 2.5) + b.radius;
+
+          if (b.mesh.position.distanceTo(enemyCenter) < hitRadius) {
+            const hitPos = b.mesh.position.clone();
+
+            const dmg = calculateDamage(b.damage);
+            if (enemy.takeDamage(dmg)) {
+              enemies.splice(j, 1);
+              updateUI();
+            }
+
+            if (b.isCannon) {
+              createShockwave(hitPos);
+            }
+
+            scene.remove(b.mesh);
+            bullets.splice(i, 1);
+            break;
+          }
+        }
+      } else {
+        const playerCenter = playerGroup.position.clone().add(new THREE.Vector3(0, 0.9, 0));
+        if (b.mesh.position.distanceTo(playerCenter) < (0.8 + b.radius)) {
+          
+          if (player.weapon === 3) {
+            const playerForward = new THREE.Vector3(0, 0, 1).applyQuaternion(playerGroup.quaternion);
+            const incomingDir = b.direction.clone().negate().normalize();
+
+            if (playerForward.dot(incomingDir) > 0) {
+              createBlockSpark(b.mesh.position);
+              scene.remove(b.mesh);
+              bullets.splice(i, 1);
+              continue;
+            }
+          }
+
+          damagePlayer(10);
+          scene.remove(b.mesh);
+          bullets.splice(i, 1);
+          continue;
+        }
+      }
+
+      if (b.life <= 0 && bullets[i]) {
+        scene.remove(b.mesh);
+        bullets.splice(i, 1);
+      }
+    }
+
+    enemies.forEach(enemy => enemy.update());
+    updateBossHealthTagPosition();
+
+    const cameraOffset = new THREE.Vector3(0, 6, -12);
+    cameraOffset.applyQuaternion(playerGroup.quaternion);
+    camera.position.copy(playerGroup.position).add(cameraOffset);
+
+    const lookAtTarget = playerGroup.position.clone().add(new THREE.Vector3(0, 1.0, 0));
+    const lookAtOffset = new THREE.Vector3(0, 0, 5).applyQuaternion(playerGroup.quaternion);
+    camera.lookAt(lookAtTarget.add(lookAtOffset));
+
+    renderer.render(scene, camera);
+  }
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  animate();
+});
+</script>
+</body>
+</html>

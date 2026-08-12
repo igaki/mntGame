@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>3D Action Game</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+    #ui {
+      position: absolute; top: 10px; left: 10px; color: #fff;
+      font-size: 18px; text-shadow: 1px 1px 2px #000; pointer-events: none;
+    }
+    #crosshair {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%); color: rgba(255,255,255,0.7);
+      font-size: 20px; pointer-events: none;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <div id="ui">
+    HP: <span id="hp">100</span><br>
+    武器: <span id="weapon">銃</span> (1: 銃 / 2: 剣)<br>
+    操作: W/A/S/D(移動), Space(ジャンプ), 前矢印キー(攻撃)
+  </div>
+  <div id="crosshair">+</div>
+
+  <script>
+    // --- 基礎設定 ---
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x202030);
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // ライティング
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(10, 20, 15);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x404050));
+
+    // 床
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(60, 60),
+      new THREE.MeshStandardMaterial({ color: 0x333344 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    scene.add(floor);
+
+    // --- プレイヤー設定 ---
+    const playerGroup = new THREE.Group();
+    const playerMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.5, 0.5, 1.8),
+      new THREE.MeshStandardMaterial({ color: 0x00ff88 })
+    );
+    playerMesh.position.y = 0.9;
+    playerGroup.add(playerMesh);
+    scene.add(playerGroup);
+
+    let playerHp = 100;
+    let velocityY = 0;
+    let isGrounded = true;
+    let currentWeapon = 'gun'; // 'gun' or 'sword'
+    let attackCooldown = 0;
+
+    // --- 敵設定 ---
+    const enemy = new THREE.Mesh(
+      new THREE.BoxGeometry(1.2, 1.8, 1.2),
+      new THREE.MeshStandardMaterial({ color: 0xff3333 })
+    );
+    enemy.position.set(0, 0.9, -15);
+    scene.add(enemy);
+    let enemyHp = 50;
+    let enemyAttackTimer = 0;
+
+    // 弾丸配列
+    const bullets = [];
+
+    // --- キー入力の管理 ---
+    const keys = {};
+    window.addEventListener('keydown', (e) => {
+      keys[e.key] = true;
+      if (e.key === '1') { currentWeapon = 'gun'; updateUI(); }
+      if (e.key === '2') { currentWeapon = 'sword'; updateUI(); }
+    });
+    window.addEventListener('keyup', (e) => { keys[e.key] = false; });
+
+    function updateUI() {
+      document.getElementById('hp').innerText = Math.max(0, playerHp);
+      document.getElementById('weapon').innerText = currentWeapon === 'gun' ? '銃' : '剣';
+    }
+
+    // --- 攻撃処理 ---
+    function performAttack() {
+      if (attackCooldown > 0) return;
+
+      if (currentWeapon === 'gun') {
+        attackCooldown = 12; // 発射間隔
+        const bullet = new THREE.Mesh(
+          new THREE.SphereGeometry(0.2),
+          new THREE.MeshBasicMaterial({ color: 0xffff00 })
+        );
+        bullet.position.copy(playerGroup.position).add(new THREE.Vector3(0, 1.2, 0));
+        
+        // 前方へ飛ぶベクトル
+        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(playerGroup.quaternion);
+        bullet.userData = { dir: dir, isEnemy: false, life: 60 };
+        bullets.push(bullet);
+        scene.add(bullet);
+      } else if (currentWeapon === 'sword') {
+        attackCooldown = 20;
+        // 剣の近接判定
+        const dist = playerGroup.position.distanceTo(enemy.position);
+        if (dist < 3) {
+          enemyHp -= 25;
+          enemy.material.color.setHex(0xffffff);
+          setTimeout(() => enemy.material.color.setHex(0xff3333), 100);
+        }
+      }
+    }
+
+    // 敵からの攻撃（ショット）
+    function enemyAttack() {
+      const bullet = new THREE.Mesh(
+        new THREE.SphereGeometry(0.25),
+        new THREE.MeshBasicMaterial({ color: 0xff00ff })
+      );
+      bullet.position.copy(enemy.position).add(new THREE.Vector3(0, 1, 0));
+      const dir = new THREE.Vector3().subVectors(playerGroup.position, enemy.position).normalize();
+      bullet.userData = { dir: dir, isEnemy: true, life: 90 };
+      bullets.push(bullet);
+      scene.add(bullet);
+    }
+
+    // --- メインループ ---
+    function animate() {
+      requestAnimationFrame(animate);
+
+      if (playerHp <= 0) return;
+
+      // 1. 移動・ジャンプ処理
+      const moveSpeed = 0.15;
+      if (keys['w'] || keys['W']) playerGroup.translateZ(-moveSpeed);
+      if (keys['s'] || keys['S']) playerGroup.translateZ(moveSpeed);
+      if (keys['a'] || keys['A']) playerGroup.translateX(-moveSpeed);
+      if (keys['d'] || keys['D']) playerGroup.translateX(moveSpeed);
+
+      // 重力とジャンプ
+      if (keys[' '] && isGrounded) {
+        velocityY = 0.25;
+        isGrounded = false;
+      }
+      playerGroup.position.y += velocityY;
+      if (!isGrounded) {
+        velocityY -= 0.015; // 重力
+      }
+      if (playerGroup.position.y <= 0) {
+        playerGroup.position.y = 0;
+        velocityY = 0;
+        isGrounded = true;
+      }
+
+      // 2. 攻撃処理
+      if (attackCooldown > 0) attackCooldown--;
+      if (keys['ArrowUp']) {
+        performAttack();
+      }
+
+      // 3. 敵のAI（プレイヤー追従＆一定間隔で攻撃）
+      if (enemyHp > 0) {
+        enemy.lookAt(playerGroup.position.x, enemy.position.y, playerGroup.position.z);
+        const distToPlayer = enemy.position.distanceTo(playerGroup.position);
+        if (distToPlayer > 5) {
+          enemy.translateZ(0.04);
+        }
+
+        enemyAttackTimer++;
+        if (enemyAttackTimer > 90) { // 約1.5秒ごとに攻撃
+          enemyAttack();
+          enemyAttackTimer = 0;
+        }
+      } else {
+        scene.remove(enemy);
+      }
+
+      // 4. 弾丸の更新・当たり判定
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        b.position.addScaledVector(b.userData.dir, 0.5);
+        b.userData.life--;
+
+        // プレイヤーの弾が敵にヒット
+        if (!b.userData.isEnemy && enemyHp > 0 && b.position.distanceTo(enemy.position) < 1.2) {
+          enemyHp -= 10;
+          scene.remove(b);
+          bullets.splice(i, 1);
+          continue;
+        }
+
+        // 敵の弾がプレイヤーにヒット
+        if (b.userData.isEnemy && b.position.distanceTo(playerGroup.position) < 1.0) {
+          playerHp -= 15;
+          updateUI();
+          scene.remove(b);
+          bullets.splice(i, 1);
+          continue;
+        }
+
+        // 寿命切れで削除
+        if (b.userData.life <= 0) {
+          scene.remove(b);
+          bullets.splice(i, 1);
+        }
+      }
+
+      // 5. カメラ追従（三人称視点）
+      const cameraOffset = new THREE.Vector3(0, 3, 7).applyQuaternion(playerGroup.quaternion);
+      camera.position.copy(playerGroup.position).add(cameraOffset);
+      camera.lookAt(playerGroup.position.clone().add(new THREE.Vector3(0, 1, 0)));
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // ウィンドウリサイズ対応
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html> 

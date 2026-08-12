@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>3D Enemy Battle Game</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: sans-serif; }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0,0,0,0.6);
+            padding: 15px;
+            border-radius: 8px;
+            pointer-events: none;
+        }
+        #weapon-info { font-weight: bold; color: #ffeb3b; }
+    </style>
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <div id="ui">
+        <h2>3D プレイヤー vs 敵 バトル</h2>
+        <p>HP: <span id="hp">100</span></p>
+        <p>選択武器: <span id="weapon-info">銃 (10ダメ)</span></p>
+        <p>操作方法:<br>
+        - WASD: 移動<br>
+        - スペース: ジャンプ<br>
+        - 1: 銃に切替 / 2: 剣に切替<br>
+        - 上矢印キー(↑): 攻撃</p>
+    </div>
+
+    <script>
+        // --- 画面・シーンの初期化 ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x202030);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // 照明
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(20, 40, 20);
+        scene.add(dirLight);
+
+        // 床
+        const floorGeo = new THREE.PlaneGeometry(100, 100);
+        const floorMat = new THREE.MeshLambertMaterial({ color: 0x444455 });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        // --- プレイヤー ---
+        const playerGeo = new THREE.CylinderGeometry(0.5, 0.5, 1.8, 16);
+        const playerMat = new THREE.MeshLambertMaterial({ color: 0x00ffcc });
+        const player = new THREE.Mesh(playerGeo, playerMat);
+        player.position.set(0, 0.9, 0);
+        scene.add(player);
+
+        // プレイヤー状態
+        let playerHP = 100;
+        let playerVelY = 0;
+        let isGrounded = true;
+        let currentWeapon = 'gun'; // 'gun' or 'sword'
+        const keys = {};
+
+        // --- 弾薬・敵データ ---
+        const bullets = [];
+        const enemyBullets = [];
+        const enemies = [];
+
+        // 敵の生成関数
+        function createEnemy(x, z) {
+            const enemyGeo = new THREE.CylinderGeometry(0.5, 0.5, 1.8, 16);
+            const enemyMat = new THREE.MeshLambertMaterial({ color: 0xff3366 });
+            const enemy = new THREE.Mesh(enemyGeo, enemyMat);
+            enemy.position.set(x, 0.9, z);
+            enemy.hp = 50;
+            enemy.lastShot = 0;
+            scene.add(enemy);
+            enemies.push(enemy);
+        }
+
+        // 初期敵を配置
+        createEnemy(-10, -15);
+        createEnemy(0, -20);
+        createEnemy(10, -15);
+
+        // --- イベントリスナー ---
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+
+            if (e.key === '1') {
+                currentWeapon = 'gun';
+                document.getElementById('weapon-info').innerText = '銃 (10ダメ)';
+            }
+            if (e.key === '2') {
+                currentWeapon = 'sword';
+                document.getElementById('weapon-info').innerText = '剣 (20ダメ)';
+            }
+            if (e.key === 'ArrowUp') {
+                attack();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        // --- 攻撃処理 ---
+        function attack() {
+            if (currentWeapon === 'gun') {
+                // 銃攻撃: 弾を発射 (前方: -Z方向)
+                const bGeo = new THREE.SphereGeometry(0.2, 8, 8);
+                const bMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+                const bullet = new THREE.Mesh(bGeo, bMat);
+                bullet.position.copy(player.position);
+                bullet.position.y += 0.5;
+                bullet.dir = new THREE.Vector3(0, 0, -1);
+                bullet.damage = 10;
+                scene.add(bullet);
+                bullets.push(bullet);
+            } else if (currentWeapon === 'sword') {
+                // 剣攻撃: 前方の近接範囲チェック
+                enemies.forEach((enemy) => {
+                    const dist = player.position.distanceTo(enemy.position);
+                    // 前方かつ距離2.5以内
+                    if (dist < 2.5 && enemy.position.z < player.position.z) {
+                        enemy.hp -= 20;
+                        enemy.material.color.setHex(0xffffff);
+                        setTimeout(() => enemy.material.color.setHex(0xff3366), 100);
+                    }
+                });
+            }
+        }
+
+        // --- メインゲームループ ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (playerHP <= 0) return;
+
+            // 1. 移動処理 (WASD)
+            const speed = 0.15;
+            if (keys['w'] || keys['W']) player.position.z -= speed;
+            if (keys['s'] || keys['S']) player.position.z += speed;
+            if (keys['a'] || keys['A']) player.position.x -= speed;
+            if (keys['d'] || keys['D']) player.position.x += speed;
+
+            // 2. ジャンプ処理 (Space)
+            if (keys[' '] && isGrounded) {
+                playerVelY = 0.25;
+                isGrounded = false;
+            }
+            player.position.y += playerVelY;
+            if (!isGrounded) {
+                playerVelY -= 0.015; // 重力
+            }
+            if (player.position.y <= 0.9) {
+                player.position.y = 0.9;
+                playerVelY = 0;
+                isGrounded = true;
+            }
+
+            // カメラ移動 (三人称追従)
+            camera.position.set(player.position.x, player.position.y + 5, player.position.z + 10);
+            camera.lookAt(player.position.x, player.position.y, player.position.z - 5);
+
+            // 3. 自分の弾の更新
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                b.position.addScaledVector(b.dir, 0.6);
+
+                // 敵との当たり判定
+                enemies.forEach((enemy) => {
+                    if (b.position.distanceTo(enemy.position) < 0.8) {
+                        enemy.hp -= b.damage;
+                        scene.remove(b);
+                        bullets.splice(i, 1);
+                    }
+                });
+
+                // 飛距離オーバーで消去
+                if (b && b.position.z < -60) {
+                    scene.remove(b);
+                    bullets.splice(i, 1);
+                }
+            }
+
+            // 4. 敵のAIと攻撃処理
+            const now = Date.now();
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const enemy = enemies[i];
+
+                // 死亡判定
+                if (enemy.hp <= 0) {
+                    scene.remove(enemy);
+                    enemies.splice(i, 1);
+                    continue;
+                }
+
+                // プレイヤーへ接近
+                const dirToPlayer = new THREE.Vector3().subVectors(player.position, enemy.position).normalize();
+                enemy.position.x += dirToPlayer.x * 0.03;
+                enemy.position.z += dirToPlayer.z * 0.03;
+
+                // 敵の自動攻撃 (2秒に1回射撃)
+                if (now - enemy.lastShot > 2000) {
+                    enemy.lastShot = now;
+                    const ebGeo = new THREE.SphereGeometry(0.2, 8, 8);
+                    const ebMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+                    const eb = new THREE.Mesh(ebGeo, ebMat);
+                    eb.position.copy(enemy.position);
+                    eb.dir = dirToPlayer.clone();
+                    scene.add(eb);
+                    enemyBullets.push(eb);
+                }
+            }
+
+            // 5. 敵の弾の更新
+            for (let i = enemyBullets.length - 1; i >= 0; i--) {
+                const eb = enemyBullets[i];
+                eb.position.addScaledVector(eb.dir, 0.3);
+
+                // プレイヤーとの当たり判定
+                if (eb.position.distanceTo(player.position) < 0.8) {
+                    playerHP -= 10;
+                    document.getElementById('hp').innerText = Math.max(0, playerHP);
+                    scene.remove(eb);
+                    enemyBullets.splice(i, 1);
+
+                    if (playerHP <= 0) {
+                        alert('GAME OVER - プレイヤーが倒されました');
+                    }
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // 画面リサイズ対応
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

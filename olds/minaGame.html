@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>3D Gun Fight Game</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        #hud {
+            position: absolute; top: 10px; left: 10px; color: white;
+            font-size: 18px; text-shadow: 2px 2px 4px #000; pointer-events: none;
+        }
+        #msg {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: red; font-size: 36px; font-weight: bold; text-shadow: 2px 2px 4px #000;
+            display: none; text-align: center;
+        }
+    </style>
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+<div id="hud">
+    PLAYER HP: <span id="php">100</span> | ENEMY HP: <span id="ehp">100</span>
+</div>
+<div id="msg"></div>
+
+<script>
+// --- 1. Scene, Camera, Renderer Setup ---
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// Lighting
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(10, 20, 15);
+scene.add(light);
+scene.add(new THREE.AmbientLight(0x404040));
+
+// Ground
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(60, 60),
+    new THREE.MeshLambertMaterial({ color: 0x33aa33 })
+);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+// --- 2. Entities (Player & Enemy) ---
+// Player (Blue)
+const player = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 2, 1),
+    new THREE.MeshLambertMaterial({ color: 0x0000ff })
+);
+player.position.set(0, 1, 15);
+scene.add(player);
+
+let playerHP = 100;
+let playerVelocityY = 0;
+let isJumping = false;
+let canAttack = true;
+
+// Enemy (Red)
+const enemy = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 2, 1),
+    new THREE.MeshLambertMaterial({ color: 0xff0000 })
+);
+enemy.position.set(0, 1, -15);
+scene.add(enemy);
+
+let enemyHP = 100;
+let enemyDirection = 1;
+
+// Bullets container
+const bullets = [];
+
+// --- 3. Controls ---
+const keys = {};
+window.addEventListener('keydown', (e) => { keys[e.code] = true; });
+window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+// --- 4. Game Logic Functions ---
+function spawnBullet(position, direction, isPlayer) {
+    const bullet = new THREE.Mesh(
+        new THREE.SphereGeometry(0.2, 8, 8),
+        new THREE.MeshBasicMaterial({ color: isPlayer ? 0xffff00 : 0xffa500 })
+    );
+    bullet.position.copy(position);
+    bullet.userData = { direction: direction, isPlayer: isPlayer };
+    scene.add(bullet);
+    bullets.push(bullet);
+}
+
+function triggerGameOver(message) {
+    const msgEl = document.getElementById('msg');
+    msgEl.innerText = message;
+    msgEl.style.display = 'block';
+}
+
+// Enemy Auto Attack Routine
+setInterval(() => {
+    if (enemyHP > 0 && playerHP > 0) {
+        const dir = new THREE.Vector3().subVectors(player.position, enemy.position).normalize();
+        spawnBullet(enemy.position.clone().add(new THREE.Vector3(0, 0.5, 0)), dir, false);
+    }
+}, 1200);
+
+// --- 5. Main Game Loop ---
+function animate() {
+    requestAnimationFrame(animate);
+
+    if (playerHP <= 0 || enemyHP <= 0) return;
+
+    // --- Player Movement ---
+    if (keys['KeyW']) player.position.z -= 0.15; // Forward
+    if (keys['KeyS']) player.position.z += 0.15; // Back
+    if (keys['KeyA']) player.position.x -= 0.15; // Left
+    if (keys['KeyD']) player.position.x += 0.15; // Right
+
+    // Jump (Space)
+    if (keys['Space'] && !isJumping) {
+        playerVelocityY = 0.25;
+        isJumping = true;
+    }
+
+    if (isJumping) {
+        player.position.y += playerVelocityY;
+        playerVelocityY -= 0.015; // Gravity
+        if (player.position.y <= 1) {
+            player.position.y = 1;
+            isJumping = false;
+        }
+    }
+
+    // Player Attack (Up Arrow Key)
+    if (keys['ArrowUp'] && canAttack) {
+        const dir = new THREE.Vector3(0, 0, -1); // Attack forward
+        spawnBullet(player.position.clone().add(new THREE.Vector3(0, 0.5, 0)), dir, true);
+        canAttack = false;
+        setTimeout(() => { canAttack = true; }, 300); // Cooldown
+    }
+
+    // Camera follow player
+    camera.position.set(player.position.x, player.position.y + 4, player.position.z + 8);
+    camera.lookAt(player.position.x, player.position.y, player.position.z - 5);
+
+    // --- Enemy AI Movement ---
+    enemy.position.x += 0.08 * enemyDirection;
+    if (Math.abs(enemy.position.x) > 10) enemyDirection *= -1;
+
+    // --- Bullet Updates & Collision Detection ---
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        b.position.addScaledVector(b.userData.direction, 0.5);
+
+        // Hit Player
+        if (!b.userData.isPlayer && b.position.distanceTo(player.position) < 1) {
+            playerHP -= 10;
+            document.getElementById('php').innerText = playerHP;
+            scene.remove(b);
+            bullets.splice(i, 1);
+            if (playerHP <= 0) triggerGameOver("GAME OVER");
+            continue;
+        }
+
+        // Hit Enemy
+        if (b.userData.isPlayer && b.position.distanceTo(enemy.position) < 1) {
+            enemyHP -= 20;
+            document.getElementById('ehp').innerText = enemyHP;
+            scene.remove(b);
+            bullets.splice(i, 1);
+            if (enemyHP <= 0) triggerGameOver("VICTORY!");
+            continue;
+        }
+
+        // Remove out of bounds bullets
+        if (b.position.length() > 50) {
+            scene.remove(b);
+            bullets.splice(i, 1);
+        }
+    }
+
+    renderer.render(scene, camera);
+}
+
+animate();
+
+// Handle Window Resize
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

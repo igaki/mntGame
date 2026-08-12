@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>3D Giant Battle Game - WASD Movement</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: sans-serif;
+      user-select: none;
+    }
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: #fff;
+      text-shadow: 1px 1px 3px #000;
+      font-size: 18px;
+      pointer-events: none;
+    }
+    #game-over {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #ff3333;
+      font-size: 48px;
+      font-weight: bold;
+      display: none;
+      text-shadow: 2px 2px 4px #000;
+    }
+  </style>
+</head>
+<body>
+
+<div id="ui">
+  <div>PLAYER HP: <span id="hp">100</span></div>
+  <div>WEAPON: <span id="weapon">銃 (10 DMG)</span></div>
+  <div>ENEMIES LEFT: <span id="enemies">0</span></div>
+</div>
+<div id="game-over">GAME OVER</div>
+
+<!-- Three.js Library -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+// --- シーン・カメラ・レンダラー ---
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x151525);
+scene.fog = new THREE.FogExp2(0x151525, 0.015);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+// --- 照明 ---
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(20, 40, 20);
+dirLight.castShadow = true;
+scene.add(dirLight);
+
+// --- 地面 ---
+const floorGeo = new THREE.PlaneGeometry(200, 200);
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x333344 });
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const grid = new THREE.GridHelper(200, 40, 0x666688, 0x333344);
+grid.position.y = 0.01;
+scene.add(grid);
+
+// --- プレイヤー ---
+const playerGroup = new THREE.Group();
+scene.add(playerGroup);
+
+const playerBodyGeo = new THREE.CylinderGeometry(0.5, 0.5, 1.8, 8);
+const playerMat = new THREE.MeshStandardMaterial({ color: 0x00ff88 });
+const playerMesh = new THREE.Mesh(playerBodyGeo, playerMat);
+playerMesh.position.y = 0.9;
+playerMesh.castShadow = true;
+playerGroup.add(playerMesh);
+
+const player = {
+  hp: 100,
+  speed: 0.18,
+  velocityY: 0,
+  isGrounded: true,
+  weapon: 1, // 1: 銃, 2: 剣
+  attackCooldown: 0,
+  isSwinging: false,
+  swingTime: 0
+};
+
+// --- 武器（銃と剣） ---
+const gunGroup = new THREE.Group();
+const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.6), new THREE.MeshStandardMaterial({ color: 0xdddd00 }));
+gunGroup.add(gunBody);
+gunGroup.position.set(0.6, 1.0, 0.3);
+playerGroup.add(gunGroup);
+
+const swordGroup = new THREE.Group();
+const bladeGeo = new THREE.BoxGeometry(0.08, 1.8, 0.2);
+const bladeMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, metalness: 0.8, roughness: 0.2, emissive: 0x0044aa });
+const blade = new THREE.Mesh(bladeGeo, bladeMat);
+blade.position.y = 0.9;
+
+const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.4), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+handle.position.y = 0;
+
+swordGroup.add(blade);
+swordGroup.add(handle);
+swordGroup.position.set(0.6, 0.9, 0.3);
+playerGroup.add(swordGroup);
+
+// 斬撃エフェクト
+const slashGeo = new THREE.RingGeometry(0.5, 2.5, 16, 1, 0, Math.PI * 0.7);
+const slashMat = new THREE.MeshBasicMaterial({ 
+  color: 0x00ffff, 
+  side: THREE.DoubleSide, 
+  transparent: true, 
+  opacity: 0 
+});
+const slashMesh = new THREE.Mesh(slashGeo, slashMat);
+slashMesh.rotation.x = Math.PI / 2;
+slashMesh.position.set(0, 1.2, 1.2);
+playerGroup.add(slashMesh);
+
+function updateWeaponVisibility() {
+  gunGroup.visible = (player.weapon === 1);
+  swordGroup.visible = (player.weapon === 2);
+}
+updateWeaponVisibility();
+
+// --- キーボード入力 ---
+const keys = {};
+window.addEventListener('keydown', (e) => {
+  keys[e.code] = true;
+  if (e.code === 'Digit1') { player.weapon = 1; updateWeaponVisibility(); updateUI(); }
+  if (e.code === 'Digit2') { player.weapon = 2; updateWeaponVisibility(); updateUI(); }
+});
+window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+// --- 弾丸管理 ---
+const bullets = [];
+function createBullet(position, direction, isEnemy = false) {
+  const geo = new THREE.SphereGeometry(isEnemy ? 0.3 : 0.2, 8, 8);
+  const mat = new THREE.MeshBasicMaterial({ color: isEnemy ? 0xff0055 : 0xffff00 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(position);
+  scene.add(mesh);
+
+  bullets.push({
+    mesh: mesh,
+    direction: direction.clone().normalize(),
+    speed: isEnemy ? 0.3 : 0.8,
+    isEnemy: isEnemy,
+    life: 100
+  });
+}
+
+// --- 巨大な敵クラス ---
+const enemies = [];
+class GiantEnemy {
+  constructor(x, z) {
+    this.hp = 80;
+    this.attackTimer = Math.random() * 100;
+
+    this.group = new THREE.Group();
+    this.group.position.set(x, 0, z);
+
+    const bodyGeo = new THREE.BoxGeometry(3, 6, 3);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xff3333 });
+    this.mesh = new THREE.Mesh(bodyGeo, bodyMat);
+    this.mesh.position.y = 3;
+    this.mesh.castShadow = true;
+    this.group.add(this.mesh);
+
+    const eyeGeo = new THREE.BoxGeometry(2, 0.5, 0.5);
+    const eye = new THREE.Mesh(eyeGeo, new THREE.MeshBasicMaterial({ color: 0x000000 }));
+    eye.position.set(0, 5, 1.5);
+    this.group.add(eye);
+
+    scene.add(this.group);
+  }
+
+  update() {
+    this.group.lookAt(playerGroup.position.x, 0, playerGroup.position.z);
+    
+    if (this.group.position.distanceTo(playerGroup.position) > 5) {
+      this.group.translateZ(0.04);
+    }
+
+    this.attackTimer++;
+    if (this.attackTimer > 120) {
+      this.attackTimer = 0;
+      const spawnPos = this.group.position.clone();
+      spawnPos.y += 4;
+      const dir = playerGroup.position.clone().sub(spawnPos).normalize();
+      createBullet(spawnPos, dir, true);
+    }
+  }
+
+  takeDamage(amount) {
+    this.hp -= amount;
+    this.mesh.material.color.setHex(0xffffff);
+    setTimeout(() => this.mesh.material.color.setHex(0xff3333), 100);
+
+    if (this.hp <= 0) {
+      scene.remove(this.group);
+      return true;
+    }
+    return false;
+  }
+}
+
+// 敵の生成
+for (let i = 0; i < 4; i++) {
+  const angle = (i / 4) * Math.PI * 2;
+  const radius = 30 + Math.random() * 10;
+  enemies.push(new GiantEnemy(Math.cos(angle) * radius, Math.sin(angle) * radius));
+}
+
+// UI更新
+function updateUI() {
+  document.getElementById('hp').innerText = Math.max(0, player.hp);
+  document.getElementById('weapon').innerText = player.weapon === 1 ? "銃 (10 DMG)" : "剣 (20 DMG)";
+  document.getElementById('enemies').innerText = enemies.length;
+}
+updateUI();
+
+// 攻撃実行
+function performAttack() {
+  if (player.attackCooldown > 0) return;
+
+  if (player.weapon === 1) {
+    // 銃攻撃
+    player.attackCooldown = 15;
+    const bulletSpawn = playerGroup.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+    const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(playerGroup.quaternion);
+    createBullet(bulletSpawn, dir, false);
+  } else if (player.weapon === 2) {
+    // 剣攻撃
+    player.attackCooldown = 25;
+    player.isSwinging = true;
+    player.swingTime = 0;
+
+    const attackRange = 6;
+    enemies.forEach((enemy, index) => {
+      const dist = playerGroup.position.distanceTo(enemy.group.position);
+      if (dist < attackRange) {
+        if (enemy.takeDamage(20)) {
+          enemies.splice(index, 1);
+          updateUI();
+        }
+      }
+    });
+  }
+}
+
+// メインゲームループ
+function animate() {
+  requestAnimationFrame(animate);
+
+  if (player.hp <= 0) return;
+
+  // 1. 3D移動制御 (W: 前進, S: 後退, A: 左, D: 右)
+  if (keys['KeyW']) playerGroup.position.z += player.speed;
+  if (keys['KeyS']) playerGroup.position.z -= player.speed;
+  if (keys['KeyA']) playerGroup.position.x -= player.speed;
+  if (keys['KeyD']) playerGroup.position.x += player.speed;
+
+  // 2. ジャンプ (Space)
+  if (keys['Space'] && player.isGrounded) {
+    player.velocityY = 0.25;
+    player.isGrounded = false;
+  }
+
+  playerGroup.position.y += player.velocityY;
+  if (!player.isGrounded) player.velocityY -= 0.012;
+
+  if (playerGroup.position.y <= 0) {
+    playerGroup.position.y = 0;
+    player.velocityY = 0;
+    player.isGrounded = true;
+  }
+
+  // 3. 攻撃 (前矢印キー)
+  if (keys['ArrowUp']) performAttack();
+  if (player.attackCooldown > 0) player.attackCooldown--;
+
+  // 4. 剣のアニメーション
+  if (player.isSwinging) {
+    player.swingTime += 0.15;
+    swordGroup.rotation.x = Math.sin(player.swingTime) * 1.8;
+    swordGroup.rotation.y = -Math.cos(player.swingTime) * 1.5;
+    swordGroup.rotation.z = -1.0;
+
+    slashMat.opacity = Math.sin(player.swingTime * Math.PI) * 0.8;
+    slashMesh.rotation.z = player.swingTime * 2;
+
+    if (player.swingTime >= Math.PI) {
+      player.isSwinging = false;
+      swordGroup.rotation.set(0, 0, 0);
+      slashMat.opacity = 0;
+    }
+  }
+
+  // 5. 弾丸処理
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.mesh.position.addScaledVector(b.direction, b.speed);
+    b.life--;
+
+    if (!b.isEnemy) {
+      for (let j = enemies.length - 1; j >= 0; j--) {
+        const enemy = enemies[j];
+        if (b.mesh.position.distanceTo(enemy.group.position.clone().add(new THREE.Vector3(0, 3, 0))) < 2.5) {
+          if (enemy.takeDamage(10)) {
+            enemies.splice(j, 1);
+            updateUI();
+          }
+          scene.remove(b.mesh);
+          bullets.splice(i, 1);
+          break;
+        }
+      }
+    } else {
+      const playerCenter = playerGroup.position.clone().add(new THREE.Vector3(0, 0.9, 0));
+      if (b.mesh.position.distanceTo(playerCenter) < 1.0) {
+        player.hp -= 10;
+        updateUI();
+        scene.remove(b.mesh);
+        bullets.splice(i, 1);
+
+        if (player.hp <= 0) {
+          document.getElementById('game-over').style.display = 'block';
+        }
+        continue;
+      }
+    }
+
+    if (b.life <= 0 && bullets[i]) {
+      scene.remove(b.mesh);
+      bullets.splice(i, 1);
+    }
+  }
+
+  // 6. 敵更新
+  enemies.forEach(enemy => enemy.update());
+
+  // 7. カメラ追従
+  camera.position.x = playerGroup.position.x;
+  camera.position.y = playerGroup.position.y + 4;
+  camera.position.z = playerGroup.position.z - 10;
+  camera.lookAt(playerGroup.position.x, playerGroup.position.y + 1.5, playerGroup.position.z + 5);
+
+  renderer.render(scene, camera);
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+animate();
+</script>
+</body>
+</html>
