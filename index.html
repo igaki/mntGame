@@ -2,6 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>3D Giant Battle Game</title>
   <style>
     body {
@@ -10,6 +11,8 @@
       font-family: sans-serif;
       user-select: none;
       background-color: #87ceeb;
+      overscroll-behavior: none;
+      touch-action: none;
     }
     /* スタート画面UI */
     #start-screen {
@@ -110,6 +113,8 @@
       border-radius: 10px;
       padding: 4px 8px;
       box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      pointer-events: auto;
+      cursor: pointer;
     }
     #special-gauge-title {
       font-size: 14px;
@@ -551,6 +556,134 @@
       text-shadow: 1px 1px 2px #000;
       margin-top: 3px;
     }
+
+    /* タッチ端末用コントロール（PCでは表示しない） */
+    #touch-controls { display: none; }
+    @media (hover: none), (pointer: coarse) {
+      #touch-controls.is-active {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        pointer-events: none;
+      }
+      #look-area {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 58%;
+        height: 72%;
+        pointer-events: auto;
+      }
+      #move-stick {
+        position: absolute;
+        left: max(22px, env(safe-area-inset-left));
+        bottom: max(30px, env(safe-area-inset-bottom));
+        width: 128px;
+        height: 128px;
+        border: 3px solid rgba(255,255,255,.75);
+        border-radius: 50%;
+        background: rgba(0,0,0,.25);
+        box-shadow: 0 0 14px rgba(0,0,0,.5);
+        pointer-events: auto;
+      }
+      #move-stick-knob {
+        position: absolute;
+        left: 50%; top: 50%;
+        width: 54px; height: 54px;
+        transform: translate(-50%, -50%);
+        border-radius: 50%;
+        background: rgba(0,255,255,.55);
+        border: 2px solid #fff;
+      }
+      #jump-button {
+        position: absolute;
+        right: max(24px, env(safe-area-inset-right));
+        bottom: max(34px, env(safe-area-inset-bottom));
+        width: 82px; height: 82px;
+        border: 3px solid #fff;
+        border-radius: 50%;
+        background: rgba(40,120,255,.72);
+        color: #fff;
+        font-weight: 900;
+        font-size: 16px;
+        text-shadow: 1px 1px 2px #000;
+        pointer-events: auto;
+      }
+      #weapon-controls {
+        position: absolute;
+        left: 50%;
+        bottom: max(13px, env(safe-area-inset-bottom));
+        transform: translateX(-50%);
+        display: flex;
+        gap: 6px;
+        pointer-events: auto;
+      }
+      .weapon-button {
+        width: 44px; height: 44px;
+        border: 2px solid #fff;
+        border-radius: 9px;
+        background: rgba(25,25,35,.78);
+        color: #fff;
+        font-size: 19px;
+        font-weight: 900;
+      }
+      .weapon-button.active {
+        background: rgba(255,204,0,.92);
+        color: #222;
+        box-shadow: 0 0 12px #ffcc00;
+      }
+      #special-gauge-container.ready {
+        box-shadow: 0 0 16px #ff00ff, 0 0 26px #00ffff;
+      }
+      /* タッチ端末では必要な戦闘情報だけを左上に残す */
+      #ui {
+        z-index: 90;
+      }
+      #ui .mobile-hidden { display: none; }
+      /* 必殺技ゲージは左スティックのすぐ上に配置する */
+      #special-gauge-container {
+        position: fixed;
+        left: max(22px, env(safe-area-inset-left));
+        right: auto;
+        bottom: calc(max(30px, env(safe-area-inset-bottom)) + 140px);
+        width: min(220px, 48vw);
+        margin-top: 0;
+      }
+
+      /* 必殺技名は画面上部に、画面幅に収まる控えめな大きさで表示する */
+      #skill-banner {
+        top: max(16vh, calc(env(safe-area-inset-top) + 44px));
+        width: min(88vw, 520px);
+        max-width: 88vw;
+        box-sizing: border-box;
+        white-space: normal;
+        text-align: center;
+      }
+      .skill-style-gun {
+        font-size: clamp(28px, 7vw, 46px);
+        letter-spacing: clamp(1px, .8vw, 4px);
+        text-shadow: 0 0 7px #ff0000, 0 0 14px #ff0055, 2px 2px 0 #000, -2px -2px 0 #000;
+      }
+      .skill-style-sword {
+        font-size: clamp(26px, 6vw, 42px);
+        letter-spacing: clamp(1px, .6vw, 3px);
+        padding: 7px 12px;
+        border-width: 2px;
+        box-shadow: 0 0 12px #00ff66, inset 0 0 8px #00ff66;
+      }
+      .skill-style-cannon {
+        font-size: clamp(26px, 6vw, 42px);
+        letter-spacing: clamp(1px, .5vw, 3px);
+        padding: 8px 12px;
+        text-shadow: 0 0 12px #ff3300, 0 0 20px #ff0000, 2px 2px 0 #000;
+      }
+    }
+    @media (hover: none) and (orientation: portrait) {
+      #move-stick { transform: scale(.82); transform-origin: bottom left; }
+      #jump-button { transform: scale(.82); transform-origin: bottom right; }
+      #weapon-controls { transform: translateX(-50%) scale(.82); transform-origin: bottom center; }
+    }
   </style>
 </head>
 <body>
@@ -567,9 +700,9 @@
 </div>
 
 <div id="ui">
-  <div>PLAYER HP: <span id="hp">150</span></div>
-  <div>WEAPON: <span id="weapon">銃 (20 DMG)</span></div>
-  <div>ENEMIES: <span id="enemies">0</span></div>
+  <div class="mobile-hidden">PLAYER HP: <span id="hp">150</span></div>
+  <div class="mobile-hidden">WEAPON: <span id="weapon">銃 (20 DMG)</span></div>
+  <div class="mobile-hidden">ENEMIES: <span id="enemies">0</span></div>
   <div>TIME: <span id="timer">00:00</span></div>
   <div id="special-gauge-container">
     <div id="special-gauge-title">必殺技 (Eキー): <span id="special-gauge-text">0%</span></div>
@@ -641,6 +774,19 @@
   <div id="extra-options">
     <div id="btn-yes" class="extra-btn">はい（Ｐ）</div>
     <div id="btn-no" class="extra-btn">いいえ（Ｏ）</div>
+  </div>
+</div>
+
+<!-- タッチ端末用操作UI -->
+<div id="touch-controls" aria-label="タッチ操作">
+  <div id="look-area" aria-label="視点変更エリア"></div>
+  <div id="move-stick" aria-label="移動スティック"><div id="move-stick-knob"></div></div>
+  <button id="jump-button" type="button" aria-label="ジャンプ">JUMP</button>
+  <div id="weapon-controls" aria-label="武器切替">
+    <button class="weapon-button active" type="button" data-weapon="1" aria-label="銃">銃</button>
+    <button class="weapon-button" type="button" data-weapon="2" aria-label="剣">剣</button>
+    <button class="weapon-button" type="button" data-weapon="3" aria-label="盾">盾</button>
+    <button class="weapon-button" type="button" data-weapon="4" aria-label="砲">砲</button>
   </div>
 </div>
 
@@ -864,6 +1010,8 @@ window.addEventListener('load', () => {
     updateUI();
     if (player.hp <= 0) {
       document.getElementById('game-over').style.display = 'block';
+      document.getElementById('touch-controls').classList.remove('is-active');
+      resetMoveStick();
     }
   }
 
@@ -1699,7 +1847,7 @@ window.addEventListener('load', () => {
       if (this.state === 0) {
         this.group.lookAt(playerGroup.position.x, 0, playerGroup.position.z);
         this.stateTimer += speedMult;
-        if (this.stateTimer > 300) {
+        if (this.stateTimer > 180) {
           this.state = 1;
           this.stateTimer = 0;
           this.strikeTimer = 0;
@@ -1709,8 +1857,8 @@ window.addEventListener('load', () => {
         this.stateTimer += speedMult;
         this.strikeTimer += 1;
 
-        // 0.1秒（6フレーム）に1発発生
-        if (this.strikeTimer >= 6) {
+        // 約0.067秒（4フレーム）に1発発生
+        if (this.strikeTimer >= 4) {
           this.strikeTimer = 0;
           const randX = (Math.random() - 0.5) * 180;
           const randZ = (Math.random() - 0.5) * 180;
@@ -1895,6 +2043,8 @@ window.addEventListener('load', () => {
 
   function resetToStartScreen() {
     gameState = 'START';
+    document.getElementById('touch-controls').classList.remove('is-active');
+    resetMoveStick();
     
     // タイマーおよびスポーンの停止
     spawnTimers.forEach(timer => clearInterval(timer));
@@ -1985,6 +2135,7 @@ window.addEventListener('load', () => {
   function startGame() {
     if (gameState === 'PLAYING') return;
     gameState = 'PLAYING';
+    document.getElementById('touch-controls').classList.add('is-active');
 
     document.getElementById('start-screen').style.display = 'none';
     document.getElementById('ui').style.display = 'block';
@@ -2035,6 +2186,100 @@ window.addEventListener('load', () => {
   let extraModalActive = false;
 
   const keys = {};
+  const touchInput = { moveX: 0, moveZ: 0 };
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+  function selectWeapon(weapon) {
+    player.weapon = weapon;
+    updateWeaponVisibility();
+    updateUI();
+    document.querySelectorAll('.weapon-button').forEach(button => {
+      button.classList.toggle('active', Number(button.dataset.weapon) === weapon);
+    });
+  }
+
+  function jump() {
+    if (!player.isGrounded || gameState !== 'PLAYING') return;
+    player.velocityY = 0.25;
+    player.isGrounded = false;
+  }
+
+  // 左スティック: 指の位置を -1〜1 の移動入力に変換する。
+  const moveStick = document.getElementById('move-stick');
+  const moveStickKnob = document.getElementById('move-stick-knob');
+  let movePointerId = null;
+  function resetMoveStick() {
+    movePointerId = null;
+    touchInput.moveX = 0;
+    touchInput.moveZ = 0;
+    moveStickKnob.style.transform = 'translate(-50%, -50%)';
+  }
+  function updateMoveStick(event) {
+    const rect = moveStick.getBoundingClientRect();
+    const radius = rect.width * 0.30;
+    const dx = event.clientX - (rect.left + rect.width / 2);
+    const dy = event.clientY - (rect.top + rect.height / 2);
+    const length = Math.hypot(dx, dy);
+    const scale = length > radius ? radius / length : 1;
+    const limitedX = dx * scale;
+    const limitedY = dy * scale;
+    touchInput.moveX = limitedX / radius;
+    touchInput.moveZ = -limitedY / radius;
+    moveStickKnob.style.transform = `translate(calc(-50% + ${limitedX}px), calc(-50% + ${limitedY}px))`;
+  }
+  moveStick.addEventListener('pointerdown', event => {
+    if (gameState !== 'PLAYING') return;
+    event.preventDefault();
+    movePointerId = event.pointerId;
+    moveStick.setPointerCapture(event.pointerId);
+    updateMoveStick(event);
+  });
+  moveStick.addEventListener('pointermove', event => {
+    if (event.pointerId === movePointerId) updateMoveStick(event);
+  });
+  moveStick.addEventListener('pointerup', event => {
+    if (event.pointerId === movePointerId) resetMoveStick();
+  });
+  moveStick.addEventListener('pointercancel', resetMoveStick);
+
+  // 右側をドラッグして視点（プレイヤーの向き）を変更する。
+  const lookArea = document.getElementById('look-area');
+  let lookPointerId = null;
+  let lastLookX = 0;
+  lookArea.addEventListener('pointerdown', event => {
+    if (gameState !== 'PLAYING') return;
+    event.preventDefault();
+    lookPointerId = event.pointerId;
+    lastLookX = event.clientX;
+    lookArea.setPointerCapture(event.pointerId);
+  });
+  lookArea.addEventListener('pointermove', event => {
+    if (event.pointerId !== lookPointerId) return;
+    playerGroup.rotation.y -= (event.clientX - lastLookX) * 0.008;
+    lastLookX = event.clientX;
+  });
+  const stopLooking = event => {
+    if (event.pointerId === lookPointerId) lookPointerId = null;
+  };
+  lookArea.addEventListener('pointerup', stopLooking);
+  lookArea.addEventListener('pointercancel', stopLooking);
+
+  document.getElementById('jump-button').addEventListener('pointerdown', event => {
+    event.preventDefault();
+    jump();
+  });
+  document.querySelectorAll('.weapon-button').forEach(button => {
+    // click は別の指でスティックを押している間に発火しない端末があるため、
+    // 押下時点で武器を切り替えて複数指操作でも確実に反応させる。
+    button.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      if (gameState === 'PLAYING') selectWeapon(Number(button.dataset.weapon));
+    });
+  });
+  document.getElementById('special-gauge-container').addEventListener('pointerdown', event => {
+    event.preventDefault();
+    if (gameState === 'PLAYING') performSpecialSkill();
+  });
 
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
@@ -2047,10 +2292,10 @@ window.addEventListener('load', () => {
     }
 
     keys[e.code] = true;
-    if (e.code === 'Digit1') { player.weapon = 1; updateWeaponVisibility(); updateUI(); }
-    if (e.code === 'Digit2') { player.weapon = 2; updateWeaponVisibility(); updateUI(); }
-    if (e.code === 'Digit3') { player.weapon = 3; updateWeaponVisibility(); updateUI(); }
-    if (e.code === 'Digit4') { player.weapon = 4; updateWeaponVisibility(); updateUI(); }
+    if (e.code === 'Digit1') selectWeapon(1);
+    if (e.code === 'Digit2') selectWeapon(2);
+    if (e.code === 'Digit3') selectWeapon(3);
+    if (e.code === 'Digit4') selectWeapon(4);
 
     if (e.code === 'KeyE') {
       performSpecialSkill();
@@ -2470,7 +2715,8 @@ window.addEventListener('load', () => {
     const gaugePct = Math.min(100, Math.floor(player.specialGauge));
     const gaugeFill = document.getElementById('special-gauge-fill');
     gaugeFill.style.width = `${gaugePct}%`;
-    document.getElementById('special-gauge-text').innerText = gaugePct === 100 ? "MAX (Eキー)" : `${gaugePct}%`;
+    document.getElementById('special-gauge-text').innerText = gaugePct === 100 ? "MAX (Eキー / タップ)" : `${gaugePct}%`;
+    document.getElementById('special-gauge-container').classList.toggle('ready', gaugePct === 100);
     if (gaugePct === 100) {
       gaugeFill.classList.add('full');
     } else {
@@ -2661,6 +2907,8 @@ window.addEventListener('load', () => {
     if (keys['KeyS']) moveVector.z -= 1;
     if (keys['KeyA']) moveVector.x += 1;
     if (keys['KeyD']) moveVector.x -= 1;
+    moveVector.z += touchInput.moveZ;
+    moveVector.x -= touchInput.moveX;
 
     if (moveVector.length() > 0) {
       moveVector.normalize();
@@ -2672,10 +2920,7 @@ window.addEventListener('load', () => {
     playerGroup.position.x = Math.max(-BOUND, Math.min(BOUND, playerGroup.position.x));
     playerGroup.position.z = Math.max(-BOUND, Math.min(BOUND, playerGroup.position.z));
 
-    if (keys['Space'] && player.isGrounded) {
-      player.velocityY = 0.25;
-      player.isGrounded = false;
-    }
+    if (keys['Space']) jump();
 
     playerGroup.position.y += player.velocityY;
     if (!player.isGrounded) player.velocityY -= 0.012;

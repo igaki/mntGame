@@ -2,6 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>3D Giant Battle Game</title>
   <style>
     body {
@@ -10,6 +11,8 @@
       font-family: sans-serif;
       user-select: none;
       background-color: #87ceeb;
+      overscroll-behavior: none;
+      touch-action: none;
     }
     /* スタート画面UI */
     #start-screen {
@@ -110,6 +113,8 @@
       border-radius: 10px;
       padding: 4px 8px;
       box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      pointer-events: auto;
+      cursor: pointer;
     }
     #special-gauge-title {
       font-size: 14px;
@@ -551,6 +556,92 @@
       text-shadow: 1px 1px 2px #000;
       margin-top: 3px;
     }
+
+    /* タッチ端末用コントロール（PCでは表示しない） */
+    #touch-controls { display: none; }
+    @media (hover: none), (pointer: coarse) {
+      #touch-controls.is-active {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        pointer-events: none;
+      }
+      #look-area {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 58%;
+        height: 72%;
+        pointer-events: auto;
+      }
+      #move-stick {
+        position: absolute;
+        left: max(22px, env(safe-area-inset-left));
+        bottom: max(30px, env(safe-area-inset-bottom));
+        width: 128px;
+        height: 128px;
+        border: 3px solid rgba(255,255,255,.75);
+        border-radius: 50%;
+        background: rgba(0,0,0,.25);
+        box-shadow: 0 0 14px rgba(0,0,0,.5);
+        pointer-events: auto;
+      }
+      #move-stick-knob {
+        position: absolute;
+        left: 50%; top: 50%;
+        width: 54px; height: 54px;
+        transform: translate(-50%, -50%);
+        border-radius: 50%;
+        background: rgba(0,255,255,.55);
+        border: 2px solid #fff;
+      }
+      #jump-button {
+        position: absolute;
+        right: max(24px, env(safe-area-inset-right));
+        bottom: max(34px, env(safe-area-inset-bottom));
+        width: 82px; height: 82px;
+        border: 3px solid #fff;
+        border-radius: 50%;
+        background: rgba(40,120,255,.72);
+        color: #fff;
+        font-weight: 900;
+        font-size: 16px;
+        text-shadow: 1px 1px 2px #000;
+        pointer-events: auto;
+      }
+      #weapon-controls {
+        position: absolute;
+        left: 50%;
+        bottom: max(13px, env(safe-area-inset-bottom));
+        transform: translateX(-50%);
+        display: flex;
+        gap: 6px;
+        pointer-events: auto;
+      }
+      .weapon-button {
+        width: 44px; height: 44px;
+        border: 2px solid #fff;
+        border-radius: 9px;
+        background: rgba(25,25,35,.78);
+        color: #fff;
+        font-size: 19px;
+        font-weight: 900;
+      }
+      .weapon-button.active {
+        background: rgba(255,204,0,.92);
+        color: #222;
+        box-shadow: 0 0 12px #ffcc00;
+      }
+      #special-gauge-container.ready {
+        box-shadow: 0 0 16px #ff00ff, 0 0 26px #00ffff;
+      }
+    }
+    @media (hover: none) and (orientation: portrait) {
+      #move-stick { transform: scale(.82); transform-origin: bottom left; }
+      #jump-button { transform: scale(.82); transform-origin: bottom right; }
+      #weapon-controls { transform: translateX(-50%) scale(.82); transform-origin: bottom center; }
+    }
   </style>
 </head>
 <body>
@@ -644,98 +735,24 @@
   </div>
 </div>
 
+<!-- タッチ端末用操作UI -->
+<div id="touch-controls" aria-label="タッチ操作">
+  <div id="look-area" aria-label="視点変更エリア"></div>
+  <div id="move-stick" aria-label="移動スティック"><div id="move-stick-knob"></div></div>
+  <button id="jump-button" type="button" aria-label="ジャンプ">JUMP</button>
+  <div id="weapon-controls" aria-label="武器切替">
+    <button class="weapon-button active" type="button" data-weapon="1" aria-label="武器1">1</button>
+    <button class="weapon-button" type="button" data-weapon="2" aria-label="武器2">2</button>
+    <button class="weapon-button" type="button" data-weapon="3" aria-label="武器3">3</button>
+    <button class="weapon-button" type="button" data-weapon="4" aria-label="武器4">4</button>
+  </div>
+</div>
+
 <!-- Three.js Library -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
 window.addEventListener('load', () => {
-  // --- Web Audio API 効果音生成エンジン ---
-  let audioCtx = null;
-  function initAudio() {
-    if (!audioCtx) {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-  }
-
-  function playSound(type) {
-    if (!audioCtx) return;
-    const now = audioCtx.currentTime;
-
-    if (type === 'gun') { // 銃射撃音
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(600, now);
-      osc.frequency.exponentialRampToValueAtTime(100, now + 0.08);
-      gain.gain.setValueAtTime(0.12, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start(now);
-      osc.stop(now + 0.08);
-    } else if (type === 'laser') { // 銃必殺技ビーム音
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(800, now);
-      osc.frequency.linearRampToValueAtTime(400, now + 0.1);
-      gain.gain.setValueAtTime(0.08, now);
-      gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start(now);
-      osc.stop(now + 0.1);
-    } else if (type === 'sword') { // 斬撃音
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(400, now);
-      osc.frequency.exponentialRampToValueAtTime(80, now + 0.12);
-      gain.gain.setValueAtTime(0.15, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start(now);
-      osc.stop(now + 0.12);
-    } else if (type === 'ruler') { // ものさしヒット音（木製打撃）
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(150, now);
-      osc.frequency.exponentialRampToValueAtTime(40, now + 0.15);
-      gain.gain.setValueAtTime(0.2, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start(now);
-      osc.stop(now + 0.15);
-    } else if (type === 'shield') { // ガード音（金属音）
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(1200, now);
-      osc.frequency.exponentialRampToValueAtTime(300, now + 0.1);
-      gain.gain.setValueAtTime(0.18, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start(now);
-      osc.stop(now + 0.1);
-    } else if (type === 'cannon') { // キャノン発砲/着弾音（爆発音）
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(120, now);
-      osc.frequency.exponentialRampToValueAtTime(20, now + 0.35);
-      gain.gain.setValueAtTime(0.25, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start(now);
-      osc.stop(now + 0.35);
-    }
-  }
-
   let gameState = 'START'; // 'START' or 'PLAYING'
 
   const killStats = {
@@ -951,6 +968,8 @@ window.addEventListener('load', () => {
     updateUI();
     if (player.hp <= 0) {
       document.getElementById('game-over').style.display = 'block';
+      document.getElementById('touch-controls').classList.remove('is-active');
+      resetMoveStick();
     }
   }
 
@@ -1347,7 +1366,7 @@ window.addEventListener('load', () => {
       }
     }
 
-    takeDamage(amount, isSpecialCannon = false) {
+    takeDamage(amount) {
       this.hp -= amount;
       this.mesh.material.color.setHex(0xffffff);
       setTimeout(() => this.mesh.material.color.setHex(this.color), 100);
@@ -1355,9 +1374,7 @@ window.addEventListener('load', () => {
       if (this.hp <= 0) {
         scene.remove(this.group);
         triggerKillUI();
-        // キャノンの必殺技で倒した場合はゲージ獲得量を通常の3分の1にする
-        const reward = isSpecialCannon ? (this.gaugeReward / 3) : this.gaugeReward;
-        addSpecialGauge(reward);
+        addSpecialGauge(this.gaugeReward);
         killStats.mobs++;
         return true;
       }
@@ -1406,7 +1423,7 @@ window.addEventListener('load', () => {
       }
     }
 
-    takeDamage(amount, isSpecialCannon = false) {
+    takeDamage(amount) {
       this.hp -= amount;
       this.mesh.material.color.setHex(0xffffff);
       setTimeout(() => this.mesh.material.color.setHex(this.color), 100);
@@ -1416,8 +1433,7 @@ window.addEventListener('load', () => {
       if (this.hp <= 0) {
         scene.remove(this.group);
         triggerKillUI();
-        const reward = isSpecialCannon ? (this.gaugeReward / 3) : this.gaugeReward;
-        addSpecialGauge(reward);
+        addSpecialGauge(this.gaugeReward);
         killStats.redOni++;
         document.getElementById('boss-hp-tag').style.display = 'none';
         activeBoss = null;
@@ -1631,7 +1647,7 @@ window.addEventListener('load', () => {
       }
     }
 
-    takeDamage(amount, isSpecialCannon = false) {
+    takeDamage(amount) {
       this.hp -= amount;
       this.mesh.material.color.setHex(0xffffff);
       setTimeout(() => this.mesh.material.color.setHex(this.color), 100);
@@ -1641,8 +1657,7 @@ window.addEventListener('load', () => {
       if (this.hp <= 0) {
         scene.remove(this.group);
         triggerKillUI();
-        const reward = isSpecialCannon ? (this.gaugeReward / 3) : this.gaugeReward;
-        addSpecialGauge(reward);
+        addSpecialGauge(this.gaugeReward);
         killStats.nijiRyuOni++;
         document.getElementById('boss-hp-tag').style.display = 'none';
         activeBoss = null;
@@ -1696,7 +1711,7 @@ window.addEventListener('load', () => {
       }
     }
 
-    takeDamage(amount, isSpecialCannon = false) {
+    takeDamage(amount) {
       this.mesh.material.color.setHex(0xffffff);
       setTimeout(() => this.mesh.material.color.setHex(this.color), 100);
 
@@ -1714,8 +1729,7 @@ window.addEventListener('load', () => {
       if (this.hp <= 0) {
         scene.remove(this.group);
         triggerKillUI();
-        const reward = isSpecialCannon ? (this.gaugeReward / 3) : this.gaugeReward;
-        addSpecialGauge(reward);
+        addSpecialGauge(this.gaugeReward);
         killStats.fujin++;
         document.getElementById('fujin-hp-tag').style.display = 'none';
         activeFujin = null;
@@ -1855,7 +1869,7 @@ window.addEventListener('load', () => {
       }
     }
 
-    takeDamage(amount, isSpecialCannon = false) {
+    takeDamage(amount) {
       this.mesh.material.color.setHex(0xffffff);
       setTimeout(() => this.mesh.material.color.setHex(this.color), 100);
 
@@ -1878,8 +1892,7 @@ window.addEventListener('load', () => {
       if (this.hp <= 0) {
         scene.remove(this.group);
         triggerKillUI();
-        const reward = isSpecialCannon ? (this.gaugeReward / 3) : this.gaugeReward;
-        addSpecialGauge(reward);
+        addSpecialGauge(this.gaugeReward);
         killStats.raijin++;
         document.getElementById('boss-hp-tag').style.display = 'none';
         activeBoss = null;
@@ -1988,6 +2001,8 @@ window.addEventListener('load', () => {
 
   function resetToStartScreen() {
     gameState = 'START';
+    document.getElementById('touch-controls').classList.remove('is-active');
+    resetMoveStick();
     
     // タイマーおよびスポーンの停止
     spawnTimers.forEach(timer => clearInterval(timer));
@@ -2076,9 +2091,9 @@ window.addEventListener('load', () => {
   let timerInterval = null;
 
   function startGame() {
-    initAudio();
     if (gameState === 'PLAYING') return;
     gameState = 'PLAYING';
+    document.getElementById('touch-controls').classList.add('is-active');
 
     document.getElementById('start-screen').style.display = 'none';
     document.getElementById('ui').style.display = 'block';
@@ -2096,10 +2111,10 @@ window.addEventListener('load', () => {
 
     // 雑魚敵の個別スポーン設定（ゲージ加算量調整）
     const enemyConfigs = [
-      { interval: 1800,  hp: 70,  attackPower: 10, color: 0xff3333, gaugeReward: 10 }, // 赤色 (+10%)
-      { interval: 6000,  hp: 20,  attackPower: 30, color: 0x3388ff, gaugeReward: 10 }, // 青色 (+10%)
-      { interval: 7000,  hp: 120, attackPower: 10, color: 0xffcc00, gaugeReward: 10 }, // 黄色 (+10%)
-      { interval: 10000, hp: 10,  attackPower: 50, color: 0x9933ff, gaugeReward: 10 }  // 紫色 (+10%)
+      { interval: 1800,  hp: 70,  attackPower: 10, color: 0xff3333, gaugeReward: 0.5 }, // 赤色 (+0.5%)
+      { interval: 6000,  hp: 20,  attackPower: 30, color: 0x3388ff, gaugeReward: 2 },   // 青色 (+2%)
+      { interval: 7000,  hp: 120, attackPower: 10, color: 0xffcc00, gaugeReward: 5 },   // 黄色 (+5%)
+      { interval: 10000, hp: 10,  attackPower: 50, color: 0x9933ff, gaugeReward: 2 }   // 紫色 (+2%)
     ];
 
     enemyConfigs.forEach(cfg => {
@@ -2129,9 +2144,97 @@ window.addEventListener('load', () => {
   let extraModalActive = false;
 
   const keys = {};
+  const touchInput = { moveX: 0, moveZ: 0 };
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+  function selectWeapon(weapon) {
+    player.weapon = weapon;
+    updateWeaponVisibility();
+    updateUI();
+    document.querySelectorAll('.weapon-button').forEach(button => {
+      button.classList.toggle('active', Number(button.dataset.weapon) === weapon);
+    });
+  }
+
+  function jump() {
+    if (!player.isGrounded || gameState !== 'PLAYING') return;
+    player.velocityY = 0.25;
+    player.isGrounded = false;
+  }
+
+  // 左スティック: 指の位置を -1〜1 の移動入力に変換する。
+  const moveStick = document.getElementById('move-stick');
+  const moveStickKnob = document.getElementById('move-stick-knob');
+  let movePointerId = null;
+  function resetMoveStick() {
+    movePointerId = null;
+    touchInput.moveX = 0;
+    touchInput.moveZ = 0;
+    moveStickKnob.style.transform = 'translate(-50%, -50%)';
+  }
+  function updateMoveStick(event) {
+    const rect = moveStick.getBoundingClientRect();
+    const radius = rect.width * 0.30;
+    const dx = event.clientX - (rect.left + rect.width / 2);
+    const dy = event.clientY - (rect.top + rect.height / 2);
+    const length = Math.hypot(dx, dy);
+    const scale = length > radius ? radius / length : 1;
+    const limitedX = dx * scale;
+    const limitedY = dy * scale;
+    touchInput.moveX = limitedX / radius;
+    touchInput.moveZ = -limitedY / radius;
+    moveStickKnob.style.transform = `translate(calc(-50% + ${limitedX}px), calc(-50% + ${limitedY}px))`;
+  }
+  moveStick.addEventListener('pointerdown', event => {
+    if (gameState !== 'PLAYING') return;
+    event.preventDefault();
+    movePointerId = event.pointerId;
+    moveStick.setPointerCapture(event.pointerId);
+    updateMoveStick(event);
+  });
+  moveStick.addEventListener('pointermove', event => {
+    if (event.pointerId === movePointerId) updateMoveStick(event);
+  });
+  moveStick.addEventListener('pointerup', event => {
+    if (event.pointerId === movePointerId) resetMoveStick();
+  });
+  moveStick.addEventListener('pointercancel', resetMoveStick);
+
+  // 右側をドラッグして視点（プレイヤーの向き）を変更する。
+  const lookArea = document.getElementById('look-area');
+  let lookPointerId = null;
+  let lastLookX = 0;
+  lookArea.addEventListener('pointerdown', event => {
+    if (gameState !== 'PLAYING') return;
+    event.preventDefault();
+    lookPointerId = event.pointerId;
+    lastLookX = event.clientX;
+    lookArea.setPointerCapture(event.pointerId);
+  });
+  lookArea.addEventListener('pointermove', event => {
+    if (event.pointerId !== lookPointerId) return;
+    playerGroup.rotation.y -= (event.clientX - lastLookX) * 0.008;
+    lastLookX = event.clientX;
+  });
+  const stopLooking = event => {
+    if (event.pointerId === lookPointerId) lookPointerId = null;
+  };
+  lookArea.addEventListener('pointerup', stopLooking);
+  lookArea.addEventListener('pointercancel', stopLooking);
+
+  document.getElementById('jump-button').addEventListener('pointerdown', event => {
+    event.preventDefault();
+    jump();
+  });
+  document.querySelectorAll('.weapon-button').forEach(button => {
+    button.addEventListener('click', () => selectWeapon(Number(button.dataset.weapon)));
+  });
+  document.getElementById('special-gauge-container').addEventListener('click', event => {
+    event.preventDefault();
+    if (gameState === 'PLAYING') performSpecialSkill();
+  });
 
   window.addEventListener('keydown', (e) => {
-    initAudio();
     if (e.repeat) return;
 
     if (gameState === 'START') {
@@ -2142,10 +2245,10 @@ window.addEventListener('load', () => {
     }
 
     keys[e.code] = true;
-    if (e.code === 'Digit1') { player.weapon = 1; updateWeaponVisibility(); updateUI(); }
-    if (e.code === 'Digit2') { player.weapon = 2; updateWeaponVisibility(); updateUI(); }
-    if (e.code === 'Digit3') { player.weapon = 3; updateWeaponVisibility(); updateUI(); }
-    if (e.code === 'Digit4') { player.weapon = 4; updateWeaponVisibility(); updateUI(); }
+    if (e.code === 'Digit1') selectWeapon(1);
+    if (e.code === 'Digit2') selectWeapon(2);
+    if (e.code === 'Digit3') selectWeapon(3);
+    if (e.code === 'Digit4') selectWeapon(4);
 
     if (e.code === 'KeyE') {
       performSpecialSkill();
@@ -2338,7 +2441,6 @@ window.addEventListener('load', () => {
           dir = targetEnemy.group.position.clone().sub(spawnPos).normalize();
         }
 
-        playSound('cannon');
         createBullet(spawnPos, dir, false, 0.6, 0.8, 150, true, 40, 0.012, true);
       }
 
@@ -2379,7 +2481,7 @@ window.addEventListener('load', () => {
       if (dist <= shockwaveRadius) {
         hitCount++;
         const dmg = calculateDamage(80);
-        if (enemy.takeDamage(dmg, isSpecialCannon)) {
+        if (enemy.takeDamage(dmg)) {
           enemies.splice(i, 1);
           updateUI();
         }
@@ -2566,7 +2668,8 @@ window.addEventListener('load', () => {
     const gaugePct = Math.min(100, Math.floor(player.specialGauge));
     const gaugeFill = document.getElementById('special-gauge-fill');
     gaugeFill.style.width = `${gaugePct}%`;
-    document.getElementById('special-gauge-text').innerText = gaugePct === 100 ? "MAX (Eキー)" : `${gaugePct}%`;
+    document.getElementById('special-gauge-text').innerText = gaugePct === 100 ? "MAX (Eキー / タップ)" : `${gaugePct}%`;
+    document.getElementById('special-gauge-container').classList.toggle('ready', gaugePct === 100);
     if (gaugePct === 100) {
       gaugeFill.classList.add('full');
     } else {
@@ -2580,7 +2683,6 @@ window.addEventListener('load', () => {
 
     if (player.weapon === 1) {
       player.attackCooldown = 15;
-      playSound('gun');
       const bulletSpawn = playerGroup.position.clone().add(new THREE.Vector3(0, 1.2, 0));
       const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(playerGroup.quaternion);
       createBullet(bulletSpawn, dir, false, 0.8, 0.2, 20, false);
@@ -2588,12 +2690,6 @@ window.addEventListener('load', () => {
       player.attackCooldown = 25;
       player.isSwinging = true;
       player.swingTime = 0;
-
-      if (player.swordSkillTimer > 0) {
-        playSound('ruler');
-      } else {
-        playSound('sword');
-      }
 
       let attackRange = 15.12;
       let swordDamage = 45;
@@ -2633,7 +2729,6 @@ window.addEventListener('load', () => {
 
       player.attackCooldown = 30;
       player.cannonCooldownFrames = 3600; // 60秒のクールダウン (60fps * 60s)
-      playSound('cannon');
 
       const bulletSpawn = playerGroup.position.clone().add(new THREE.Vector3(0, 3.5, 0));
       const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(playerGroup.quaternion);
@@ -2709,7 +2804,6 @@ window.addEventListener('load', () => {
     // 銃必殺技（直線のレーザー照射）
     if (player.isGunLaserActive && player.weapon === 1) {
       playerLaserMat.opacity = 0.8 + Math.sin(Date.now() * 0.05) * 0.2;
-      playSound('laser');
 
       const playerWorldPos = playerGroup.position.clone();
       const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(playerGroup.quaternion);
@@ -2766,6 +2860,8 @@ window.addEventListener('load', () => {
     if (keys['KeyS']) moveVector.z -= 1;
     if (keys['KeyA']) moveVector.x += 1;
     if (keys['KeyD']) moveVector.x -= 1;
+    moveVector.z += touchInput.moveZ;
+    moveVector.x -= touchInput.moveX;
 
     if (moveVector.length() > 0) {
       moveVector.normalize();
@@ -2777,10 +2873,7 @@ window.addEventListener('load', () => {
     playerGroup.position.x = Math.max(-BOUND, Math.min(BOUND, playerGroup.position.x));
     playerGroup.position.z = Math.max(-BOUND, Math.min(BOUND, playerGroup.position.z));
 
-    if (keys['Space'] && player.isGrounded) {
-      player.velocityY = 0.25;
-      player.isGrounded = false;
-    }
+    if (keys['Space']) jump();
 
     playerGroup.position.y += player.velocityY;
     if (!player.isGrounded) player.velocityY -= 0.012;
@@ -2840,13 +2933,12 @@ window.addEventListener('load', () => {
             const hitPos = b.mesh.position.clone();
 
             const dmg = calculateDamage(b.damage);
-            if (enemy.takeDamage(dmg, b.isSpecialCannon)) {
+            if (enemy.takeDamage(dmg)) {
               enemies.splice(j, 1);
               updateUI();
             }
 
             if (b.isCannon) {
-              playSound('cannon');
               createShockwave(hitPos, b.explosionRadius, b.isSpecialCannon);
             }
 
@@ -2864,7 +2956,6 @@ window.addEventListener('load', () => {
             const incomingDir = b.direction.clone().negate().normalize();
 
             if (playerForward.dot(incomingDir) > 0) {
-              playSound('shield');
               createBlockSpark(b.mesh.position);
               scene.remove(b.mesh);
               bullets.splice(i, 1);
