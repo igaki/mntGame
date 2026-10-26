@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>空跳設備</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; user-select: none; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        #ui {
+            position: absolute; top: 10px; left: 10px; color: #fff;
+            background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px;
+            font-size: 14px; line-height: 1.5; max-width: 320px; pointer-events: none;
+        }
+        #crosshair {
+            position: absolute; top: 50%; left: 50%; width: 10px; height: 10px;
+            margin-top: -5px; margin-left: -5px; border: 2px solid rgba(255,255,255,0.8);
+            border-radius: 50%; pointer-events: none;
+        }
+        #msg {
+            position: absolute; top: 40%; width: 100%; text-align: center;
+            color: #ff3333; font-size: 32px; font-weight: bold; text-shadow: 2px 2px 4px #000;
+            display: none; pointer-events: none;
+        }
+        #instructions {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            color: #fff; background: rgba(0,0,0,0.8); padding: 10px 20px; border-radius: 5px; text-align: center;
+        }
+    </style>
+    <!-- Three.js (3D描画ライブラリ) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="crosshair"></div>
+    <div id="ui">
+        <div><b>HP:</b> <span id="hp-val">600</span> / 600</div>
+        <div><b>残機（許容死亡回数）:</b> <span id="lives-val">3</span></div>
+        <div><b>ステージ:</b> <span id="stage-val">1</span> / 2 (遭遇: <span id="wave-val">1</span>)</div>
+        <div><b>武器 [1-7キーで切替]:</b> <span id="weapon-val">ノーマルメリケン</span></div>
+        <div><b>弾薬/状態:</b> <span id="ammo-val">∞</span></div>
+        <div><b>特殊技冷却:</b> <span id="skill-val">READY</span></div>
+        <div style="margin-top: 5px; color: #aaa; font-size: 12px;" id="weapon-desc"></div>
+    </div>
+    <div id="msg"></div>
+    <div id="instructions">画面をクリックして操作開始（Pキーでポーズ）</div>
+
+    <script>
+        // --- 武器データ定義 ---
+        const WEAPONS = [
+            { name: "ノーマルメリケン", atk: 20, desc: "特殊技: 3秒間で700回前方パンチ" },
+            { name: "木刀", atk: 40, desc: "特殊技: 剣をぶん回して移動しながら攻撃" },
+            { name: "拳銃", atk: 60, desc: "3発リロード6秒 / 特殊技: 8秒間無制限＆全弾必中" },
+            { name: "ノーマルアックス", atk: 80, desc: "硬直2秒 / 特殊技: 大ジャンプ衝撃波(190ダメ)" },
+            { name: "ノーマルスピア", atk: 90, desc: "硬直4秒 / 特殊技: 槍投擲テレポート＆雨(60ダメx670本)" },
+            { name: "初弓", atk: 10, desc: "2秒チャージ最大5発(威力1.5倍累計) / 特殊技: 貫通矢(590ダメ)" },
+            { name: "アイアンシールド", atk: 0, desc: "前方防御/W2回ダッシュ / 特殊技: サーフィン15秒(70ダメ+速度1.7倍)" }
+        ];
+
+        // ステージ構造（敵ウェーブ定義）
+        const STAGE_WAVES = {
+            1: [
+                { trash: 3, mop: 7, tawashi: 2 },
+                { mold: 10, trash: 3 },
+                { joy: 3, tawashi: 7, mop: 3, trash: 4 } // 勝利で「汚染完了」
+            ],
+            2: [
+                { trash: 13 },
+                { tawashi: 9, mop: 3 },
+                { joy: 6, tawashi: 2, trash: 6 },
+                { mold: 25, trash: 3, trash_big: 1 },
+                { mop_long: 1, trash_big: 6, mop_long_sub: 3, joy: 31 }, // 簡略統合
+                { trash_big: 6, mop_long: 3, joy: 31 }
+            ]
+        };
+
+        // --- ゲーム状態変数 ---
+        let scene, camera, renderer;
+        let player = {
+            hp: 600, maxHp: 600, lives: 3,
+            pos: new THREE.Vector3(0, 2, 0),
+            vel: new THREE.Vector3(),
+            rotY: 0, rotX: 0,
+            weaponIdx: 0,
+            ammo: 3, isReloading: false, reloadTimer: 0,
+            chargeTimer: 0, isCharging: false,
+            cooldown: 0, skillActiveTimer: 0, skillCd: 0,
+            isSurfing: false, surfTimer: 0
+        };
+
+        let keys = {};
+        let lastWTime = 0;
+        let enemies = [];
+        let particles = [];
+        let stage = 1, wave = 0;
+        let isLocked = false, isPaused = false;
+
+        // --- 初期化 ---
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111118);
+            scene.fog = new THREE.FogExp2(0x111118, 0.015);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // 照明
+            const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambient);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(20, 40, 20);
+            scene.add(dirLight);
+
+            // ステージ構築 (ダクト風トンネル)
+            buildDuctMap();
+
+            // イベント登録
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('keydown', e => onKeyDown(e));
+            document.addEventListener('keyup', e => keys[e.code] = false);
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mousedown', onMouseDown);
+            document.addEventListener('mouseup', onMouseUp);
+
+            document.body.addEventListener('click', () => {
+                if (!isLocked && !isPaused) {
+                    document.body.requestPointerLock();
+                }
+            });
+            document.addEventListener('pointerlockchange', () => {
+                isLocked = (document.pointerLockElement === document.body);
+            });
+
+            startWave();
+            animate();
+        }
+
+        function buildDuctMap() {
+            // エアコンのダクト（長い金属の四角いトンネル）
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x778899, metalness: 0.8, roughness: 0.3 });
+            const floorMat = new THREE.MeshStandardMaterial({ color: 0x444455, roughness: 0.5 });
+
+            // 床
+            const floor = new THREE.Mesh(new THREE.BoxGeometry(30, 1, 300), floorMat);
+            floor.position.set(0, -0.5, -100);
+            scene.add(floor);
+
+            // 壁
+            const leftWall = new THREE.Mesh(new THREE.BoxGeometry(1, 20, 300), wallMat);
+            leftWall.position.set(-15, 10, -100);
+            scene.add(leftWall);
+
+            const rightWall = new THREE.Mesh(new THREE.BoxGeometry(1, 20, 300), wallMat);
+            rightWall.position.set(15, 10, -100);
+            scene.add(rightWall);
+
+            // 天井
+            const ceil = new THREE.Mesh(new THREE.BoxGeometry(30, 1, 300), wallMat);
+            ceil.position.set(0, 20, -100);
+            scene.add(ceil);
+        }
+
+        // --- ウェーブ進行 ---
+        function startWave() {
+            const waves = STAGE_WAVES[stage];
+            if (wave >= waves.length) {
+                if (stage === 1) {
+                    showMessage("汚染完了", 3000);
+                    setTimeout(() => { stage = 2; wave = 0; startWave(); }, 3000);
+                } else {
+                    showMessage("全ステージクリア！", 10000);
+                }
+                return;
+            }
+
+            const currentWaveData = waves[wave];
+            spawnEnemies(currentWaveData);
+            updateUI();
+        }
+
+        function spawnEnemies(data) {
+            enemies.forEach(e => scene.remove(e.mesh));
+            enemies = [];
+
+            let spawnZ = -30;
+            for (let type in data) {
+                let count = data[type];
+                for (let i = 0; i < count; i++) {
+                    let e = createEnemy(type);
+                    e.mesh.position.set((Math.random() - 0.5) * 20, e.height / 2, spawnZ - Math.random() * 50);
+                    scene.add(e.mesh);
+                    enemies.push(e);
+                }
+            }
+        }
+
+        // --- 敵生成ロジック ---
+        function createEnemy(type) {
+            let mesh, hp, atk, speed, height = 2;
+            let mat = new THREE.MeshStandardMaterial();
+
+            if (type === 'trash' || type === 'trash_big') {
+                let isBig = type === 'trash_big';
+                hp = isBig ? 500 : 360;
+                atk = isBig ? 70 : 50;
+                height = isBig ? 4 : 2;
+                mat.color.setHex(0x555555);
+                mesh = new THREE.Mesh(new THREE.CylinderGeometry(height/2, height/2, height), mat);
+            } else if (type === 'mop' || type === 'mop_long') {
+                let isLong = type === 'mop_long';
+                hp = 400;
+                atk = isLong ? 90 : 70;
+                height = isLong ? 5 : 3;
+                mat.color.setHex(0x00aaff);
+                mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, height), mat);
+            } else if (type === 'mold') { // カビ◯ラー
+                hp = 400; atk = 30; // 0.7秒当あたり30
+                mat.color.setHex(0xffffff);
+                mesh = new THREE.Mesh(new THREE.BoxGeometry(1.5, 3, 1.5), mat);
+            } else if (type === 'tawashi') {
+                hp = 300; atk = 60;
+                mat.color.setHex(0x8b4513);
+                mesh = new THREE.Mesh(new THREE.SphereGeometry(1.2), mat);
+            } else if (type === 'joy') { // ジョイ・◯ール
+                hp = 250; atk = 70;
+                mat.color.setHex(0xffff00);
+                mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 2.5), mat);
+            } else {
+                hp = 100; atk = 10;
+                mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+            }
+
+            return { type, mesh, hp, maxHp: hp, atk, height, state: 'idle', timer: 0 };
+        }
+
+        // --- キー入力制御 ---
+        function onKeyDown(e) {
+            keys[e.code] = true;
+            
+            // 武器切替 (1-7)
+            if (e.key >= '1' && e.key <= '7') {
+                player.weaponIdx = parseInt(e.key) - 1;
+                updateUI();
+            }
+
+            // W2回押しダッシュ
+            if (e.code === 'KeyW') {
+                let now = performance.now();
+                if (now - lastWTime < 300) {
+                    // 1.7秒突進
+                    player.vel.z = -30;
+                }
+                lastWTime = now;
+            }
+
+            // Pキー ポーズ
+            if (e.code === 'KeyP') {
+                isPaused = !isPaused;
+                showMessage(isPaused ? "PAUSE" : "", 0);
+            }
+
+            // Eキー 特殊技
+            if (e.code === 'KeyE') {
+                useSpecialSkill();
+            }
+        }
+
+        function onMouseMove(e) {
+            if (!isLocked || isPaused) return;
+            player.rotY -= e.movementX * 0.003;
+            player.rotX -= e.movementY * 0.003;
+            player.rotX = Math.max(-Math.PI/2.5, Math.min(Math.PI/2.5, player.rotX));
+        }
+
+        function onMouseDown(e) {
+            if (e.button === 0 && isLocked && !isPaused) { // 左クリック攻撃
+                attack();
+            }
+        }
+
+        function onMouseUp(e) {
+            if (e.button === 0 && player.isCharging) {
+                // 初弓 チャージ発射
+                fireBow();
+            }
+        }
+
+        // --- 攻撃＆特殊技処理 ---
+        function attack() {
+            if (player.cooldown > 0) return;
+
+            const w = WEAPONS[player.weaponIdx];
+            
+            if (w.name === "拳銃") {
+                if (player.ammo <= 0) return;
+                player.ammo--;
+                dealFrontDamage(w.atk, 50);
+                player.cooldown = 0.3;
+                if (player.ammo === 0) {
+                    player.isReloading = true;
+                    player.reloadTimer = 6.0; // 6秒リロード
+                }
+            } else if (w.name === "ノーマルアックス") {
+                dealFrontDamage(w.atk, 4);
+                player.cooldown = 2.0; // 2秒こうちゃく
+            } else if (w.name === "ノーマルスピア") {
+                dealFrontDamage(w.atk, 6);
+                player.cooldown = 4.0; // 4秒こうちゃく
+            } else if (w.name === "初弓") {
+                player.isCharging = true;
+                player.chargeTimer = 0;
+            } else {
+                dealFrontDamage(w.atk, 3);
+                player.cooldown = 0.4;
+            }
+            updateUI();
+        }
+
+        function fireBow() {
+            player.isCharging = false;
+            let arrows = Math.min(5, 1 + Math.floor(player.chargeTimer / 2.0));
+            let mult = Math.pow(1.5, arrows - 1);
+            let totalDmg = 10 * arrows * mult;
+            dealFrontDamage(totalDmg, 60);
+            player.cooldown = 0.5;
+            updateUI();
+        }
+
+        function useSpecialSkill() {
+            const w = WEAPONS[player.weaponIdx];
+            
+            if (w.name === "ノーマルメリケン") {
+                // 3秒間 700回パンチ（超高速連続判定）
+                let duration = 3.0;
+                let interval = setInterval(() => {
+                    dealFrontDamage(w.atk, 3);
+                    duration -= 0.05;
+                    if (duration <= 0) clearInterval(interval);
+                }, 50);
+            } else if (w.name === "拳銃") {
+                // 8秒間 リロードなし＆全弾命中
+                player.skillActiveTimer = 8.0;
+                player.ammo = 999;
+            } else if (w.name === "ノーマルアックス") {
+                // 大ジャンプ衝撃波 (190ダメ)
+                player.vel.y = 15;
+                setTimeout(() => {
+                    enemies.forEach(e => applyDamage(e, 190));
+                }, 600);
+            } else if (w.name === "ノーマルスピア") {
+                // 槍投げテレポート＆雨(60ダメx670本)
+                player.pos.z -= 20;
+                for (let i = 0; i < 50; i++) { // 描画負荷軽減のため判定を束ねて再現
+                    setTimeout(() => {
+                        enemies.forEach(e => {
+                            if (e.mesh.position.distanceTo(player.pos) < 15) applyDamage(e, 60 * 13);
+                        });
+                    }, i * 30);
+                }
+            } else if (w.name === "初弓") {
+                // 視線方向貫通矢(590ダメ)
+                dealFrontDamage(590, 100);
+            } else if (w.name === "アイアンシールド") {
+                // 15秒間サーフィン (70ダメ+速度1.7倍)
+                player.isSurfing = true;
+                player.surfTimer = 15.0;
+            }
+        }
+
+        function dealFrontDamage(dmg, range) {
+            let dir = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotY);
+            enemies.forEach(e => {
+                let toEnemy = e.mesh.position.clone().sub(player.pos);
+                if (toEnemy.length() < range && toEnemy.dot(dir) > 0) {
+                    applyDamage(e, dmg);
+                }
+            });
+        }
+
+        function applyDamage(e, dmg) {
+            e.hp -= dmg;
+            if (e.hp <= 0) {
+                scene.remove(e.mesh);
+            }
+        }
+
+        // --- メイン更新ループ ---
+        function animate() {
+            requestAnimationFrame(animate);
+            if (isPaused) return;
+
+            let dt = 0.016; // 約60fps想定
+
+            // リロード & チャージ & 冷却タイマー処理
+            if (player.isReloading) {
+                player.reloadTimer -= dt;
+                if (player.reloadTimer <= 0) {
+                    player.isReloading = false;
+                    player.ammo = 3;
+                    updateUI();
+                }
+            }
+            if (player.isCharging) {
+                player.chargeTimer += dt;
+            }
+            if (player.cooldown > 0) player.cooldown -= dt;
+            if (player.surfTimer > 0) {
+                player.surfTimer -= dt;
+                if (player.surfTimer <= 0) player.isSurfing = false;
+            }
+
+            // プレイヤー移動処理
+            let speed = player.isSurfing ? 15 * 1.7 : 15;
+            let moveZ = 0, moveX = 0;
+            if (keys['KeyW']) moveZ -= 1;
+            if (keys['KeyS']) moveZ += 1;
+            if (keys['KeyA']) moveX -= 1;
+            if (keys['KeyD']) moveX += 1;
+
+            let moveVec = new THREE.Vector3(moveX, 0, moveZ).normalize();
+            moveVec.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotY);
+
+            player.pos.x += moveVec.x * speed * dt;
+            player.pos.z += moveVec.z * speed * dt;
+            player.pos.y += player.vel.y * dt;
+
+            // 重力
+            if (player.pos.y > 2) {
+                player.vel.y -= 35 * dt;
+            } else {
+                player.pos.y = 2;
+                player.vel.y = 0;
+                if (keys['Space']) player.vel.y = 12; // ジャンプ
+            }
+
+            // カメラ同調
+            camera.position.copy(player.pos);
+            camera.rotation.set(0, 0, 0);
+            camera.rotation.y = player.rotY;
+            camera.rotation.x = player.rotX;
+
+            // サーフィン中の接触ダメージ
+            if (player.isSurfing) {
+                enemies.forEach(e => {
+                    if (e.mesh.position.distanceTo(player.pos) < 2.5) {
+                        applyDamage(e, 70);
+                    }
+                });
+            }
+
+            // 敵のAI & 攻撃ループ
+            enemies = enemies.filter(e => e.hp > 0);
+            enemies.forEach(e => {
+                let dist = e.mesh.position.distanceTo(player.pos);
+                let dir = player.pos.clone().sub(e.mesh.position).normalize();
+
+                // 移動
+                if (dist > 2) {
+                    e.mesh.position.add(dir.multiplyScalar(4 * dt));
+                }
+
+                // 敵攻撃
+                if (dist < 3) {
+                    takePlayerDamage(e.atk * dt);
+                }
+            });
+
+            // ウェーブクリア判定
+            if (enemies.length === 0) {
+                wave++;
+                startWave();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        function takePlayerDamage(amount) {
+            player.hp -= amount;
+            if (player.hp <= 0) {
+                player.lives--;
+                if (player.lives <= 0) {
+                    showMessage("GAME OVER", 100000);
+                    isPaused = true;
+                } else {
+                    player.hp = player.maxHp;
+                    player.pos.set(0, 2, 0);
+                    showMessage("死亡！ 残り機数: " + player.lives, 2000);
+                }
+            }
+            updateUI();
+        }
+
+        // --- UI更新 ---
+        function updateUI() {
+            document.getElementById('hp-val').innerText = Math.max(0, Math.floor(player.hp));
+            document.getElementById('lives-val').innerText = player.lives;
+            document.getElementById('stage-val').innerText = stage;
+            document.getElementById('wave-val').innerText = wave + 1;
+            
+            const w = WEAPONS[player.weaponIdx];
+            document.getElementById('weapon-val').innerText = w.name;
+            document.getElementById('weapon-desc').innerText = w.desc;
+
+            if (w.name === "拳銃") {
+                document.getElementById('ammo-val').innerText = player.isReloading ? 
+                    `リロード中 (${player.reloadTimer.toFixed(1)}s)` : `${player.ammo} / 3`;
+            } else {
+                document.getElementById('ammo-val').innerText = "∞";
+            }
+        }
+
+        function showMessage(text, time) {
+            const el = document.getElementById('msg');
+            el.innerText = text;
+            el.style.display = text ? 'block' : 'none';
+            if (time > 0) {
+                setTimeout(() => { if (el.innerText === text) el.style.display = 'none'; }, time);
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>

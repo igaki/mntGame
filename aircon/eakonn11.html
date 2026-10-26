@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>空跳設備</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; user-select: none; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        #ui {
+            position: absolute; top: 10px; left: 10px; color: #fff;
+            background: rgba(0,0,0,0.4); padding: 8px 12px; border-radius: 6px;
+            font-size: 12px; line-height: 1.4; pointer-events: none; z-index: 10;
+        }
+        #crosshair {
+            position: absolute; top: 50%; left: 50%; width: 6px; height: 6px;
+            margin-top: -3px; margin-left: -3px; border: 1px solid rgba(255,255,255,0.7);
+            border-radius: 50%; pointer-events: none; z-index: 10;
+        }
+        #msg {
+            position: absolute; top: 30%; width: 100%; text-align: center;
+            color: #ff3333; font-size: 28px; font-weight: bold; text-shadow: 2px 2px 4px #000;
+            display: none; pointer-events: none; z-index: 10;
+        }
+        #instructions {
+            position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%);
+            color: #fff; background: rgba(0,0,0,0.6); padding: 8px 16px; border-radius: 5px; text-align: center;
+            font-size: 14px; cursor: pointer; z-index: 20;
+        }
+    </style>
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="crosshair"></div>
+    <div id="ui">
+        <div><b>HP:</b> <span id="hp-val">600</span> | <b>残機:</b> <span id="lives-val">3</span> | <b>STAGE:</b> <span id="stage-val">1</span></div>
+        <div><b>武器 [1-7]:</b> <span id="weapon-val">ノーマルメリケン</span> (<span id="ammo-val">∞</span>)</div>
+        <div><b>特殊技(E):</b> <span id="skill-val">READY</span></div>
+        <div id="progress-val" style="color:#ffcc00; font-weight:bold;">奧へ進んでください</div>
+    </div>
+    <div id="msg"></div>
+    <div id="instructions">【クリックしてスタート】</div>
+
+    <script>
+        // --- 武器データ ---
+        const WEAPONS = [
+            { name: "ノーマルメリケン", atk: 20, cd: 0, skillCd: 10, type: "fist" },
+            { name: "木刀", atk: 40, cd: 0, skillCd: 12, type: "sword" },
+            { name: "拳銃", atk: 60, cd: 0, skillCd: 15, type: "gun" },
+            { name: "ノーマルアックス", atk: 80, cd: 0, skillCd: 15, type: "axe" },
+            { name: "ノーマルスピア", atk: 90, cd: 0, skillCd: 18, type: "spear" },
+            { name: "初弓", atk: 10, cd: 0, skillCd: 20, type: "bow" },
+            { name: "アイアンシールド", atk: 0, cd: 0, skillCd: 25, type: "shield" }
+        ];
+
+        const ARROW_COLORS = [
+            0x8b4513, // 1段階：茶色
+            0x00ff66, // 2段階：緑色
+            0x00c8ff, // 3段階：水色・青色
+            0xaa00ff, // 4段階：紫色
+            0xffd700  // 5段階（最大チャージ）：金色
+        ];
+
+        const STAGE_WAVES = {
+            1: [
+                { triggerZ: -20, trash: 3, mop: 5 },
+                { type: 'athletic', startZ: -60, endZ: -110 },
+                { triggerZ: -120, mold: 8, tawashi: 3 },
+                { triggerZ: -180, joy: 3, tawashi: 5, trash: 4 }
+            ],
+            2: [
+                { triggerZ: -20, trash: 10 },
+                { type: 'athletic', startZ: -60, endZ: -110 },
+                { triggerZ: -120, tawashi: 8, mop: 3 },
+                { triggerZ: -200, mold: 15, trash_big: 3, joy: 10 }
+            ]
+        };
+
+        const BOUNDS = { minX: -13.5, maxX: 13.5, minY: -10.0, maxY: 18.5, minZ: -285.0, maxZ: 10.0 };
+
+        let scene, camera, renderer;
+        let viewModelGroup, leftArm, rightArm;
+        let weaponMeshes = {};
+
+        let player = {
+            hp: 600, maxHp: 600, lives: 3,
+            pos: new THREE.Vector3(0, 2, 0),
+            vel: new THREE.Vector3(),
+            rotY: 0, rotX: 0,
+            weaponIdx: 0,
+            ammo: 3, isReloading: false, reloadTimer: 0,
+            chargeTimer: 0, isCharging: false,
+            cooldown: 0,
+            skillCdTimers: [0, 0, 0, 0, 0, 0, 0],
+            isSurfing: false, surfTimer: 0
+        };
+
+        let keys = {};
+        let lastWTime = 0;
+        let enemies = [];
+        let platforms = [];
+        let projectiles = [];
+        let floatingTexts = [];
+        let stage = 1, wave = 0;
+        let waveSpawned = false;
+        let gameStarted = false;
+        let isLocked = false, isPaused = false;
+
+        let attackAnimTimer = 0;
+        let isAttacking = false;
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x20242b);
+            scene.fog = new THREE.FogExp2(0x20242b, 0.008);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            const ambient = new THREE.AmbientLight(0xddeeff, 0.8);
+            scene.add(ambient);
+            
+            const dirLight = new THREE.DirectionalLight(0xfff5ea, 1.0);
+            dirLight.position.set(0, 40, -50);
+            scene.add(dirLight);
+
+            buildFPSViewModel();
+            buildDuctMap();
+            buildAthletics();
+
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('keydown', e => onKeyDown(e));
+            document.addEventListener('keyup', e => keys[e.code] = false);
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mousedown', onMouseDown);
+            document.addEventListener('mouseup', onMouseUp);
+
+            window.addEventListener('click', () => {
+                if (!gameStarted) {
+                    gameStarted = true;
+                    document.getElementById('instructions').style.display = 'none';
+                }
+                if (!isLocked && !isPaused) document.body.requestPointerLock();
+            });
+
+            document.addEventListener('pointerlockchange', () => {
+                isLocked = (document.pointerLockElement === document.body);
+            });
+
+            checkWaveTrigger();
+            animate();
+        }
+
+        function createHumanArm(isRight) {
+            const armGroup = new THREE.Group();
+            const skinMat = new THREE.MeshStandardMaterial({ color: 0xffcd9e, roughness: 0.5 });
+            const clothMat = new THREE.MeshStandardMaterial({ color: 0x2244aa, roughness: 0.6 });
+
+            const sideSign = isRight ? 1 : -1;
+
+            const upperArm = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.4, 12), clothMat);
+            upperArm.position.set(0, 0, 0);
+            upperArm.rotation.x = Math.PI / 3;
+            upperArm.rotation.z = sideSign * (Math.PI / 10);
+            armGroup.add(upperArm);
+
+            const foreArm = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.065, 0.45, 12), skinMat);
+            foreArm.position.set(sideSign * 0.02, -0.22, -0.22);
+            foreArm.rotation.x = Math.PI / 2.2;
+            foreArm.rotation.y = -sideSign * (Math.PI / 12);
+            armGroup.add(foreArm);
+
+            const palm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.14), skinMat);
+            palm.position.set(sideSign * 0.03, -0.38, -0.42);
+            armGroup.add(palm);
+
+            const thumb = new

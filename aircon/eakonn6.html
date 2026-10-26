@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>空跳設備</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; user-select: none; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        /* 視界を遮らないようUIを極小・薄型化 */
+        #ui {
+            position: absolute; top: 10px; left: 10px; color: #fff;
+            background: rgba(0,0,0,0.4); padding: 8px 12px; border-radius: 6px;
+            font-size: 12px; line-height: 1.4; pointer-events: none; z-index: 10;
+        }
+        #crosshair {
+            position: absolute; top: 50%; left: 50%; width: 6px; height: 6px;
+            margin-top: -3px; margin-left: -3px; border: 1px solid rgba(255,255,255,0.7);
+            border-radius: 50%; pointer-events: none; z-index: 10;
+        }
+        #msg {
+            position: absolute; top: 30%; width: 100%; text-align: center;
+            color: #ff3333; font-size: 28px; font-weight: bold; text-shadow: 2px 2px 4px #000;
+            display: none; pointer-events: none; z-index: 10;
+        }
+        #instructions {
+            position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%);
+            color: #fff; background: rgba(0,0,0,0.6); padding: 8px 16px; border-radius: 5px; text-align: center;
+            font-size: 14px; cursor: pointer; z-index: 20;
+        }
+    </style>
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="crosshair"></div>
+    <div id="ui">
+        <div><b>HP:</b> <span id="hp-val">600</span> | <b>残機:</b> <span id="lives-val">3</span> | <b>STAGE:</b> <span id="stage-val">1</span></div>
+        <div><b>武器 [1-7]:</b> <span id="weapon-val">ノーマルメリケン</span> (<span id="ammo-val">∞</span>)</div>
+        <div><b>特殊技(E):</b> <span id="skill-val">READY</span></div>
+        <div id="progress-val" style="color:#ffcc00; font-weight:bold;">奧へ進んでください</div>
+    </div>
+    <div id="msg"></div>
+    <div id="instructions">【クリックしてスタート】</div>
+
+    <script>
+        // --- 武器データ（初弓の特殊技CDを20秒に設定） ---
+        const WEAPONS = [
+            { name: "ノーマルメリケン", atk: 20, cd: 0, skillCd: 10 },
+            { name: "木刀", atk: 40, cd: 0, skillCd: 12 },
+            { name: "拳銃", atk: 60, cd: 0, skillCd: 15 },
+            { name: "ノーマルアックス", atk: 80, cd: 0, skillCd: 15 },
+            { name: "ノーマルスピア", atk: 90, cd: 0, skillCd: 18 },
+            { name: "初弓", atk: 10, cd: 0, skillCd: 20 }, // 20秒冷却
+            { name: "アイアンシールド", atk: 0, cd: 0, skillCd: 25 }
+        ];
+
+        // ウェーブ構造（アスレチック通過条件を追加）
+        const STAGE_WAVES = {
+            1: [
+                { triggerZ: -20, trash: 3, mop: 5 },
+                { type: 'athletic', startZ: -70, endZ: -120 }, // アスレチックエリア1
+                { triggerZ: -130, mold: 8, tawashi: 3 },
+                { triggerZ: -180, joy: 3, tawashi: 5, trash: 4 }
+            ],
+            2: [
+                { triggerZ: -20, trash: 10 },
+                { type: 'athletic', startZ: -70, endZ: -130 }, // アスレチックエリア2
+                { triggerZ: -140, tawashi: 8, mop: 3 },
+                { triggerZ: -200, mold: 15, trash_big: 3, joy: 10 }
+            ]
+        };
+
+        const BOUNDS = { minX: -13.5, maxX: 13.5, minY: -10.0, maxY: 18.5, minZ: -285.0, maxZ: 10.0 };
+
+        let scene, camera, renderer;
+        let player = {
+            hp: 600, maxHp: 600, lives: 3,
+            pos: new THREE.Vector3(0, 2, 0),
+            vel: new THREE.Vector3(),
+            rotY: 0, rotX: 0,
+            weaponIdx: 0,
+            ammo: 3, isReloading: false, reloadTimer: 0,
+            chargeTimer: 0, isCharging: false,
+            cooldown: 0,
+            skillCdTimers: [0, 0, 0, 0, 0, 0, 0], // 各武器の冷却タイマー
+            isSurfing: false, surfTimer: 0
+        };
+
+        let keys = {};
+        let lastWTime = 0;
+        let enemies = [];
+        let platforms = []; // アスレチック足場
+        let floatingTexts = [];
+        let stage = 1, wave = 0;
+        let waveSpawned = false;
+        let gameStarted = false;
+        let isLocked = false, isPaused = false;
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x20242b);
+            scene.fog = new THREE.FogExp2(0x20242b, 0.008);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            const ambient = new THREE.AmbientLight(0xddeeff, 0.8);
+            scene.add(ambient);
+            
+            const dirLight = new THREE.DirectionalLight(0xfff5ea, 1.0);
+            dirLight.position.set(0, 40, -50);
+            scene.add(dirLight);
+
+            buildDuctMap();
+            buildAthletics();
+
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('keydown', e => onKeyDown(e));
+            document.addEventListener('keyup', e => keys[e.code] = false);
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mousedown', onMouseDown);
+            document.addEventListener('mouseup', onMouseUp);
+
+            window.addEventListener('click', () => {
+                if (!gameStarted) {
+                    gameStarted = true;
+                    document.getElementById('instructions').style.display = 'none';
+                }
+                if (!isLocked && !isPaused) document.body.requestPointerLock();
+            });
+
+            document.addEventListener('pointerlockchange', () => {
+                isLocked = (document.pointerLockElement === document.body);
+            });
+
+            checkWaveTrigger();
+            animate();
+        }
+
+        // --- 排気口マップ構築 ---
+        function buildDuctMap() {
+            const ductMat = new THREE.MeshStandardMaterial({ color: 0x8899a6, metalness: 0.8, roughness: 0.2 });
+            const grateMat = new THREE.MeshStandardMaterial({ color: 0x333b42, metalness: 0.9, roughness: 0.4 });
+
+            // 床（アスレチック部分は床を抜いて落ちるように設置）
+            const floor1 = new THREE.Mesh(new THREE.BoxGeometry(30, 1, 70), ductMat);
+            floor1.position.set(0, -0.5, -20);
+            scene.add(floor1);
+
+            const floor2 = new THREE.Mesh(new THREE.BoxGeometry(30, 1, 150), ductMat);
+            floor2.position.set(0, -0.5, -210);
+            scene.add(floor2);
+
+            // 壁・天井
+            const leftWall = new THREE.Mesh(new THREE.BoxGeometry(1, 30, 300), ductMat);
+            leftWall.position.set(-15, 5, -135);
+            scene.add(leftWall);
+
+            const rightWall = new THREE.Mesh(new THREE.BoxGeometry(1, 30, 300), ductMat);
+            rightWall.position.set(15, 5, -135);
+            scene.add(rightWall);
+
+            const ceil = new THREE.Mesh(new THREE.BoxGeometry(30, 1, 300), ductMat);
+            ceil.position.set(0, 20, -135);
+            scene.add(ceil);
+
+            // 補強リング
+            const ribGeo = new THREE.BoxGeometry(31, 25, 1.5);
+            const ribMat = new THREE.MeshStandardMaterial({ color: 0x505c66, metalness: 0.9 });
+            for (let z = 0; z >= -280; z -= 35) {
+                const rib = new THREE.Mesh(ribGeo, ribMat);
+                rib.position.set(0, 8, z);
+                scene.add(rib);
+            }
+        }
+
+        // --- アスレチック足場の生成 ---
+        function buildAthletics() {
+            const platMat = new THREE.MeshStandardMaterial({ color: 0x00aaff, metalness: 0.5, roughness: 0.2 });
+            
+            // アスレチックゾーン1（Z: -60 ~ -120）の飛び石足場
+            const positions1 = [
+                { x: -4, y: 1, z: -65 },
+                { x:  3, y: 2, z: -78 },
+                { x: -5, y: 3, z: -90 },
+                { x:  2, y: 2, z: -102 },
+                { x:  0, y: 1, z: -115 }
+            ];
+
+            positions1.forEach(p => {
+                const mesh = new THREE.Mesh(new THREE.BoxGeometry(4, 0.8, 4), platMat);
+                mesh.position.set(p.x, p.y, p.z);
+                scene.add(mesh);
+                platforms.push(mesh);
+            });
+        }
+
+        function checkWaveTrigger() {
+            const waves = STAGE_WAVES[stage];
+            if (wave >= waves.length) {
+                if (stage === 1) {
+                    showMessage("ステージ1 クリア！ ステージ2へ", 3000);
+                    setTimeout(() => {
+                        stage = 2; wave = 0; waveSpawned = false;
+                        player.pos.set(0, 2, 0); updateUI();
+                    }, 3000);
+                } else {
+                    showMessage("全ステージクリア！", 100000);
+                    isPaused = true;
+                }
+                return;
+            }
+
+            const current = waves[wave];
+            
+            // アスレチッククリア判定
+            if (current.type === 'athletic') {
+                if (player.pos.z <= current.endZ) {
+                    wave++;
+                    waveSpawned = false;
+                    showMessage("アスレチック踏破！", 2000);
+                }
+            } else if (!waveSpawned && player.pos.z <= current.triggerZ) {
+                spawnEnemies(current);
+                waveSpawned = true;
+                showMessage("敵群 遭遇！", 2000);
+            }
+            updateUI();
+        }
+
+        function spawnEnemies(data) {
+            let spawnZ = player.pos.z - 25;
+            for (let type in data) {
+                if (type === 'triggerZ') continue;
+                let count = data[type];
+                for (let i = 0; i < count; i++) {
+                    let e = createEnemy(type);
+                    e.mesh.position.set((Math.random() - 0.5) * 18, e.height / 2, spawnZ - Math.random() * 30);
+                    scene.add(e.mesh);
+                    enemies.push(e);
+                }
+            }
+        }
+
+        function createEnemy(type) {
+            let group = new THREE.Group();
+            let hp, atk, height = 2, speed = 4;
+            let enemyData = { type, mesh: group, hp, maxHp: hp, atk, height, speed, invulnerable: false, timer: 0 };
+
+            if (type === 'tawashi') {
+                hp = 300; atk = 60; height = 1.6; speed = 5;
+                const body = new THREE.Mesh(new THREE.SphereGeometry(1.0, 12, 10), new THREE.MeshStandardMaterial({ color: 0x8b5a2b }));
+                body.scale.set(1.2, 0.8, 1.4); group.add(body);
+                enemyData.invulnerable = true;
+            } else {
+                let mat = new THREE.MeshStandardMaterial({ roughness: 0.4 });
+                hp = 250; atk = 50;
+                if (type === 'mop') mat.color.setHex(0x0099ff);
+                else if (type === 'mold') mat.color.setHex(0xffffff);
+                else if (type === 'joy') mat.color.setHex(0xffe600);
+                else mat.color.setHex(0x777777);
+                group.add(new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.5, 1.5), mat));
+            }
+
+            enemyData.hp = hp; enemyData.maxHp = hp; enemyData.atk = atk; enemyData.height = height; enemyData.speed = speed;
+            return enemyData;
+        }
+
+        function spawnDamageText(position, text) {
+            const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.font = 'Bold 36px Arial'; ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center';
+            ctx.fillText(text, 64, 45);
+
+            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true }));
+            sprite.position.copy(position).add(new THREE.Vector3(0, 1.5, 0));
+            sprite.scale.set(2, 1, 1);
+            scene.add(sprite);
+            floatingTexts.push({ sprite, life: 0.8 });
+        }
+
+        function onKeyDown(e) {
+            keys[e.code] = true;
+            if (e.key >= '1' && e.key <= '7') {
+                player.weaponIdx = parseInt(e.key) - 1; updateUI();
+            }
+            if (e.code === 'KeyW') {
+                let now = performance.now();
+                if (now - lastWTime < 300) player.vel.z = -25;
+                lastWTime = now;
+            }
+            if (e.code === 'KeyP') isPaused = !isPaused;
+            if (e.code === 'KeyE') useSpecialSkill();
+        }
+
+        function onMouseMove(e) {
+            if (isPaused) return;
+            player.rotY -= (e.movementX || 0) * 0.003;
+            player.rotX -= (e.movementY || 0) * 0.003;
+            player.rotX = Math.max(-Math.PI/2.5, Math.min(Math.PI/2.5, player.rotX));
+        }
+
+        function onMouseDown(e) { if (e.button === 0 && !isPaused) attack(); }
+        function onMouseUp(e) { if (e.button === 0 && player.isCharging) fireBow(); }
+
+        function attack() {
+            if (player.cooldown > 0) return;
+            const w = WEAPONS[player.weaponIdx];
+            if (w.name === "拳銃") {
+                if (player.ammo <= 0) return;
+                player.ammo--; dealFrontDamage(w.atk, 50); player.cooldown = 0.3;
+                if (player.ammo === 0) { player.isReloading = true; player.reloadTimer = 6.0; }
+            } else if (w.name === "初弓") {
+                player.isCharging = true; player.chargeTimer = 0;
+            } else {
+                dealFrontDamage(w.atk, 5); player.cooldown = 0.4;
+            }
+            updateUI();
+        }
+
+        function fireBow() {
+            player.isCharging = false;
+            let arrows = Math.min(5, 1 + Math.floor(player.chargeTimer / 2.0));
+            let mult = Math.pow(1.5, arrows - 1);
+            dealFrontDamage(Math.round(10 * arrows * mult), 60);
+            player.cooldown = 0.5; updateUI();
+        }
+
+        function useSpecialSkill() {
+            const idx = player.weaponIdx;
+            const w = WEAPONS[idx];
+            if (player.skillCdTimers[idx] > 0) return; // 冷却中
+
+            if (w.name === "初弓") {
+                dealFrontDamage(590, 100);
+                player.skillCdTimers[idx] = 20.0; // ★ 弓の特殊技リロード時間を20秒に設定
+            } else {
+                dealFrontDamage(w.atk * 3, 10);
+                player.skillCdTimers[idx] = w.skillCd;
+            }
+            updateUI();
+        }
+
+        function dealFrontDamage(dmg, range) {
+            let dir = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotY);
+            enemies.forEach(e => {
+                let toEnemy = e.mesh.position.clone().sub(player.pos);
+                if (toEnemy.length() < range && toEnemy.dot(dir) > 0) applyDamage(e, dmg);
+            });
+        }
+
+        function applyDamage(e, dmg) {
+            e.hp -= dmg;
+            spawnDamageText(e.mesh.position, String(Math.round(dmg)));
+            if (e.hp <= 0) scene.remove(e.mesh);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (isPaused) return;
+
+            let dt = 0.016;
+
+            // 各スキルの20秒等のCDカウントダウン
+            for (let i = 0; i < player.skillCdTimers.length; i++) {
+                if (player.skillCdTimers[i] > 0) {
+                    player.skillCdTimers[i] -= dt;
+                    if (player.skillCdTimers[i] < 0) player.skillCdTimers[i] = 0;
+                }
+            }
+
+            if (player.isReloading) {
+                player.reloadTimer -= dt;
+                if (player.reloadTimer <= 0) { player.isReloading = false; player.ammo = 3; }
+            }
+            if (player.isCharging) player.chargeTimer += dt;
+            if (player.cooldown > 0) player.cooldown -= dt;
+
+            let speed = 15;
+            let moveZ = 0, moveX = 0;
+            if (keys['KeyW']) moveZ -= 1;
+            if (keys['KeyS']) moveZ += 1;
+            if (keys['KeyA']) moveX -= 1;
+            if (keys['KeyD']) moveX += 1;
+
+            let moveVec = new THREE.Vector3(moveX, 0, moveZ).normalize();
+            moveVec.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotY);
+
+            player.pos.x += moveVec.x * speed * dt;
+            player.pos.z += moveVec.z * speed * dt;
+            player.pos.y += player.vel.y * dt;
+
+            // 重力＆足場（アスレチック）当たり判定
+            let onGround = false;
+            let floorY = 2.0;
+
+            // 床があるエリアチェック
+            if ((player.pos.z > -55) || (player.pos.z < -135 && player.pos.z > -285)) {
+                floorY = 2.0;
+            } else {
+                floorY = -15.0; // アスレチックの穴（落ちる）
+            }
+
+            // 足場の上に乗っているか判定
+            platforms.forEach(p => {
+                if (Math.abs(player.pos.x - p.position.x) < 2.2 &&
+                    Math.abs(player.pos.z - p.position.z) < 2.2 &&
+                    player.pos.y >= p.position.y + 1.2 && player.pos.y <= p.position.y + 2.5) {
+                    floorY = p.position.y + 2.0;
+                }
+            });
+
+            if (player.pos.y > floorY) {
+                player.vel.y -= 35 * dt;
+            } else {
+                player.pos.y = floorY;
+                player.vel.y = 0;
+                onGround = true;
+                if (keys['Space']) player.vel.y = 12; // ジャンプ
+            }
+
+            // 穴に落下した場合のミス処理
+            if (player.pos.y < -8.0) {
+                takePlayerDamage(100);
+                player.pos.set(0, 3, player.pos.z + 15); // 手前へ復帰
+                player.vel.set(0, 0, 0);
+            }
+
+            player.pos.x = Math.max(BOUNDS.minX, Math.min(BOUNDS.maxX, player.pos.x));
+
+            camera.position.copy(player.pos);
+            camera.rotation.set(0, 0, 0);
+            camera.rotation.y = player.rotY;
+            camera.rotation.x = player.rotX;
+
+            enemies = enemies.filter(e => e.hp > 0);
+            enemies.forEach(e => {
+                let dist = e.mesh.position.distanceTo(player.pos);
+                let dir = player.pos.clone().sub(e.mesh.position).normalize();
+                e.mesh.lookAt(player.pos.x, e.mesh.position.y, player.pos.z);
+                if (dist > 2) e.mesh.position.add(dir.multiplyScalar(e.speed * dt));
+                if (dist < 2.5) takePlayerDamage(e.atk * dt);
+            });
+
+            floatingTexts = floatingTexts.filter(ft => ft.life > 0);
+            floatingTexts.forEach(ft => {
+                ft.life -= dt;
+                ft.sprite.position.y += dt;
+                ft.sprite.material.opacity = ft.life;
+                ft.sprite.quaternion.copy(camera.quaternion);
+            });
+
+            if (waveSpawned && enemies.length === 0 && STAGE_WAVES[stage][wave].type !== 'athletic') {
+                wave++; waveSpawned = false;
+            }
+            checkWaveTrigger();
+
+            renderer.render(scene, camera);
+        }
+
+        function takePlayerDamage(amount) {
+            player.hp -= amount;
+            if (player.hp <= 0) {
+                player.lives--;
+                if (player.lives <= 0) {
+                    showMessage("GAME OVER", 100000); isPaused = true;
+                } else {
+                    player.hp = player.maxHp; player.pos.set(0, 2, 0);
+                    showMessage("残機減！ 復帰します", 2000);
+                }
+            }
+            updateUI();
+        }
+
+        function updateUI() {
+            document.getElementById('hp-val').innerText = Math.max(0, Math.floor(player.hp));
+            document.getElementById('lives-val').innerText = player.lives;
+            document.getElementById('stage-val').innerText = stage;
+
+            const w = WEAPONS[player.weaponIdx];
+            document.getElementById('weapon-val').innerText = w.name;
+            document.getElementById('ammo-val').innerText = (w.name === "拳銃") ? `${player.ammo}/3` : "∞";
+
+            // 特殊技冷却タイマー表示（弓などの20秒冷却をリアルタイム表示）
+            const cd = player.skillCdTimers[player.weaponIdx];
+            document.getElementById('skill-val').innerText = (cd > 0) ? `冷却中 (${cd.toFixed(1)}s)` : "READY";
+
+            const current = STAGE_WAVES[stage][wave];
+            if (current) {
+                if (current.type === 'athletic') {
+                    let rem = Math.max(0, Math.round(player.pos.z - current.endZ));
+                    document.getElementById('progress-val').innerText = `【アスレチック進行中】 あと ${rem}m 渡りきってください`;
+                } else {
+                    let rem = Math.max(0, Math.round(player.pos.z - current.triggerZ));
+                    document.getElementById('progress-val').innerText = waveSpawned ? "戦闘中！ 敵を倒してください" : `あと ${rem}m 進むと敵出現`;
+                }
+            }
+        }
+
+        function showMessage(text, time) {
+            const el = document.getElementById('msg');
+            el.innerText = text; el.style.display = text ? 'block' : 'none';
+            if (time > 0) setTimeout(() => { if (el.innerText === text) el.style.display = 'none'; }, time);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
